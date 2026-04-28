@@ -1,0 +1,20 @@
+// providers/location_provider.dart
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+
+import '../core/services/location_service.dart';
+
+/// Posición actual del usuario (se obtiene una vez al iniciar).
+final ubicacionProvider = FutureProvider<LatLng>((ref) async {
+  return await LocationService.instance.obtenerPosicion();
+});
+
+/// Stream de actualizaciones de posición (para tracking).
+final ubicacionStreamProvider = StreamProvider<LatLng>((ref) {
+  return LocationService.instance.posicionStream();
+});
+
+/// Si el usuario concedió permiso de ubicación.
+final tienePermisoUbicacionProvider = FutureProvider<bool>((ref) async {
+  return await LocationService.instance.tienePermiso();
+});

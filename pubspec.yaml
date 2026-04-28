@@ -1,0 +1,76 @@
+name: al_toque
+description: "CanchApp - Reserva de canchas deportivas en Huancayo, Perú"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.10.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+
+  # Firebase
+  firebase_core: ^3.3.0
+  firebase_auth: ^5.1.0
+  cloud_firestore: ^5.2.0
+  firebase_storage: ^12.1.0
+  firebase_messaging: ^15.0.4
+  firebase_analytics: ^11.2.0
+
+  # Mapas — Google Maps para Android
+  google_maps_flutter: ^2.7.0
+  geolocator: ^13.0.1
+  geocoding: ^3.0.0
+  flutter_polyline_points: ^2.1.0
+
+  # Estado
+  flutter_riverpod: ^2.5.1
+  hooks_riverpod: ^2.5.1
+  riverpod: ^2.5.1
+
+  # UI
+  google_fonts: ^6.2.1
+  cached_network_image: ^3.3.1
+  shimmer: ^3.0.0
+  lottie: ^3.1.2
+  fl_chart: ^0.68.0
+
+  # Utilidades
+  intl: ^0.20.2
+  uuid: ^4.4.2
+  share_plus: ^10.0.0
+  url_launcher: ^6.3.0
+  permission_handler: ^11.3.1
+  local_auth: ^2.2.0
+
+  # QR
+  qr_flutter: ^4.1.0
+  mobile_scanner: ^5.2.3
+
+  # Pagos (estructura lista para Culqi/Izipay)
+  shared_preferences: ^2.3.1
+
+  # Notificaciones locales
+  flutter_local_notifications: ^17.2.2
+
+  # Deep links
+  app_links: ^6.3.2
+
+  # Navegación
+  go_router: ^14.3.0
+
+  # Device info (para verificar Android SDK version en runtime perms)
+  device_info_plus: ^10.1.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+  build_runner: ^2.4.11
+  riverpod_generator: ^2.4.0
+
+flutter:
+  uses-material-design: true

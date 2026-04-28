@@ -1,0 +1,79 @@
+{
+  "indexes": [
+    {
+      "_comment": "reservas: 'mis reservas' ordenadas por más recientes",
+      "collectionGroup": "reservas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "creadoEn", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "_comment": "reservas: panel admin — todas las reservas del complejo por fecha",
+      "collectionGroup": "reservas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "complejoId", "order": "ASCENDING" },
+        { "fieldPath": "fecha", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "_comment": "reservas: validación de disponibilidad de un slot (cancha + rango fecha + estado)",
+      "collectionGroup": "reservas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "complejoId", "order": "ASCENDING" },
+        { "fieldPath": "canchaId", "order": "ASCENDING" },
+        { "fieldPath": "estado", "order": "ASCENDING" },
+        { "fieldPath": "fecha", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "_comment": "reservas: ingresos por rango de fechas",
+      "collectionGroup": "reservas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "complejoId", "order": "ASCENDING" },
+        { "fieldPath": "fecha", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "_comment": "partidos: feed público de partidos abiertos",
+      "collectionGroup": "partidos",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "estado", "order": "ASCENDING" },
+        { "fieldPath": "fecha", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "_comment": "partidos: panel admin del complejo",
+      "collectionGroup": "partidos",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "complejoId", "order": "ASCENDING" },
+        { "fieldPath": "fecha", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "_comment": "flashSlots: ofertas activas vigentes",
+      "collectionGroup": "flashSlots",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "estado", "order": "ASCENDING" },
+        { "fieldPath": "expiraEn", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "_comment": "flashSlots: panel admin del complejo",
+      "collectionGroup": "flashSlots",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "complejoId", "order": "ASCENDING" },
+        { "fieldPath": "creadoEn", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}
