@@ -8,6 +8,7 @@ import '../../core/constants/app_constants.dart';
 import '../../core/theme/app_colors.dart';
 import '../../models/complejo_model.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/complejos_provider.dart';
 import '../../repositories/complejos_repository.dart';
 
 class AdminMiComplejoScreen extends ConsumerStatefulWidget {
@@ -173,11 +174,7 @@ class _AdminMiComplejoScreenState
     }
 
     // Escucha el complejo en tiempo real para pre-cargar
-    final complejoAsync = ref.watch(
-      StreamProvider.autoDispose<ComplejoModel?>(
-        (r) => ComplejosRepository().streamComplejo(complejoId),
-      ),
-    );
+    final complejoAsync = ref.watch(complejoProvider(complejoId));
 
     return complejoAsync.when(
       loading: () => Scaffold(

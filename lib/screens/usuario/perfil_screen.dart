@@ -27,8 +27,8 @@ class PerfilScreen extends ConsumerWidget {
       ),
       data: (perfil) {
         if (perfil == null) return const SizedBox.shrink();
-        if (perfil.esDueno) return _AdminPerfil(perfil: perfil, ref: ref);
-        return _JugadorPerfil(perfil: perfil, ref: ref);
+        if (perfil.esDueno) return _AdminPerfil(perfil: perfil);
+        return _JugadorPerfil(perfil: perfil);
       },
     );
   }
@@ -38,13 +38,12 @@ class PerfilScreen extends ConsumerWidget {
 // JUGADOR — diseño con header verde oscuro + cuerpo claro
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _JugadorPerfil extends StatelessWidget {
+class _JugadorPerfil extends ConsumerWidget {
   final UsuarioModel perfil;
-  final WidgetRef ref;
-  const _JugadorPerfil({required this.perfil, required this.ref});
+  const _JugadorPerfil({required this.perfil});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return Scaffold(
       backgroundColor: AppColors.bg,
       body: Column(
@@ -389,13 +388,12 @@ class _PerfilTile extends StatelessWidget {
 // ADMIN — tema oscuro premium (mismo lenguaje visual que dashboard)
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _AdminPerfil extends StatelessWidget {
+class _AdminPerfil extends ConsumerWidget {
   final UsuarioModel perfil;
-  final WidgetRef ref;
-  const _AdminPerfil({required this.perfil, required this.ref});
+  const _AdminPerfil({required this.perfil});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return Scaffold(
       backgroundColor: AppColors.abg,
       body: Column(

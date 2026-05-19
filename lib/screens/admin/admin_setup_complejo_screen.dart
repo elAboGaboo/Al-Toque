@@ -204,8 +204,10 @@ class _AdminSetupComplejoScreenState
           _guardado = true;
           _guardando = false;
         });
-        await Future.delayed(const Duration(milliseconds: 500));
-        if (mounted) context.go('/admin/dashboard');
+        // Navega solo cuando Firestore propagó el complejoId — evita race condition.
+        ref.listenManual(complejoIdProvider, (_, next) {
+          if (next != null && mounted) context.go('/admin/dashboard');
+        }, fireImmediately: true);
       }
     } catch (e) {
       if (mounted) {
@@ -240,8 +242,10 @@ class _AdminSetupComplejoScreenState
           _guardado = true;
           _guardando = false;
         });
-        await Future.delayed(const Duration(milliseconds: 500));
-        if (mounted) context.go('/admin/dashboard');
+        // Navega solo cuando Firestore propagó el complejoId — evita race condition.
+        ref.listenManual(complejoIdProvider, (_, next) {
+          if (next != null && mounted) context.go('/admin/dashboard');
+        }, fireImmediately: true);
       }
     } catch (e) {
       if (mounted) {
