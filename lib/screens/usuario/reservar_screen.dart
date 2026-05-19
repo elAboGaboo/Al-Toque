@@ -238,7 +238,7 @@ class _ReservarScreenState extends ConsumerState<ReservarScreen> {
               fecha: _fechaSeleccionada,
               horaInicio: _horaSeleccionada!,
               horaFin: horaFin,
-              duracionHoras: 1,
+              duracionHoras: 1.0,
               precioTotal: cancha.precioBase,
               metodoPago: _metodoPago,
             );
@@ -258,7 +258,9 @@ class _ReservarScreenState extends ConsumerState<ReservarScreen> {
   String _calcularHoraFin(String horaInicio) {
     final parts = horaInicio.split(':');
     final hora = int.parse(parts[0]) + 1;
-    return '${hora.toString().padLeft(2, '0')}:${parts[1]}';
+    // Cap en 23:00 — no existen slots que terminen a las 24:00
+    final horaFin = hora > 23 ? 23 : hora;
+    return '${horaFin.toString().padLeft(2, '0')}:${parts[1]}';
   }
 }
 

@@ -7,9 +7,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 
 import '../../core/theme/app_colors.dart';
-import '../../models/complejo_model.dart';
 import '../../providers/auth_provider.dart';
-import '../../repositories/complejos_repository.dart';
+import '../../providers/complejos_provider.dart';
 
 class AdminDashboardScreen extends ConsumerWidget {
   const AdminDashboardScreen({super.key});
@@ -62,13 +61,8 @@ class AdminDashboardScreen extends ConsumerWidget {
 
     // Nombre real del complejo desde Firestore
     final complejoId = ref.watch(complejoIdProvider);
-    final complejoAsync = complejoId != null
-        ? ref.watch(
-            StreamProvider.autoDispose<ComplejoModel?>(
-              (r) => ComplejosRepository().streamComplejo(complejoId),
-            ),
-          )
-        : null;
+    final complejoAsync =
+        complejoId != null ? ref.watch(complejoProvider(complejoId)) : null;
     final nombreComplejo =
         complejoAsync?.asData?.value?.nombre ?? 'Mi Complejo';
 

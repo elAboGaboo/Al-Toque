@@ -81,10 +81,7 @@ class AdminFlashSlotsScreen extends ConsumerWidget {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _CrearFlashSlotSheet(
-        complejoId: complejoId,
-        ref: ref,
-      ),
+      builder: (_) => _CrearFlashSlotSheet(complejoId: complejoId),
     );
   }
 }
@@ -240,24 +237,28 @@ class _FlashSlotAdminCard extends StatelessWidget {
   }
 }
 
-class _CrearFlashSlotSheet extends StatefulWidget {
+class _CrearFlashSlotSheet extends ConsumerStatefulWidget {
   final String complejoId;
-  final WidgetRef ref;
 
-  const _CrearFlashSlotSheet(
-      {required this.complejoId, required this.ref});
+  const _CrearFlashSlotSheet({required this.complejoId});
 
   @override
-  State<_CrearFlashSlotSheet> createState() =>
+  ConsumerState<_CrearFlashSlotSheet> createState() =>
       _CrearFlashSlotSheetState();
 }
 
-class _CrearFlashSlotSheetState extends State<_CrearFlashSlotSheet> {
-  final String _horaInicio = '19:00';
-  final String _horaFin = '20:00';
+class _CrearFlashSlotSheetState extends ConsumerState<_CrearFlashSlotSheet> {
+  String _horaInicio = '19:00';
+  String _horaFin = '20:00';
   double _descuento = 25;
   double _precioOriginal = 80;
   bool _loading = false;
+
+  static const _horas = [
+    '07:00', '08:00', '09:00', '10:00', '11:00', '12:00',
+    '13:00', '14:00', '15:00', '16:00', '17:00', '18:00',
+    '19:00', '20:00', '21:00', '22:00', '23:00',
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -292,6 +293,47 @@ class _CrearFlashSlotSheetState extends State<_CrearFlashSlotSheet> {
             ],
           ),
           const SizedBox(height: 20),
+
+          // ── Selección de horario ───────────────────────────
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Hora inicio',
+                        style: GoogleFonts.outfit(
+                            fontSize: 12, color: Colors.white54)),
+                    const SizedBox(height: 4),
+                    _HoraDropdown(
+                      value: _horaInicio,
+                      horas: _horas,
+                      onChanged: (h) => setState(() => _horaInicio = h),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Hora fin',
+                        style: GoogleFonts.outfit(
+                            fontSize: 12, color: Colors.white54)),
+                    const SizedBox(height: 4),
+                    _HoraDropdown(
+                      value: _horaFin,
+                      horas: _horas,
+                      onChanged: (h) => setState(() => _horaFin = h),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 16),
           Text(
             'Precio original: ${PrecioUtils.formatear(_precioOriginal)}',
             style: GoogleFonts.outfit(color: Colors.white70),
@@ -378,10 +420,48 @@ class _CrearFlashSlotSheetState extends State<_CrearFlashSlotSheet> {
       creadoPor: 'admin',
       creadoEn: DateTime.now(),
     );
-    await widget.ref
-        .read(flashSlotNotifierProvider.notifier)
-        .crearSlot(slot);
+    await ref.read(flashSlotNotifierProvider.notifier).crearSlot(slot);
     if (mounted) Navigator.pop(context);
   }
 }
 
+// ── Dropdown de hora reutilizable ─────────────────────────────────────────────
+
+class _HoraDropdown extends StatelessWidget {
+  final String value;
+  final List<String> horas;
+  final ValueChanged<String> onChanged;
+
+  const _HoraDropdown({
+    required this.value,
+    required this.horas,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: AppColors.adminS2,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.adminS3),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: horas.contains(value) ? value : horas.first,
+          dropdownColor: AppColors.adminS1,
+          style: GoogleFonts.outfit(color: Colors.white, fontSize: 14),
+          iconEnabledColor: Colors.white54,
+          isExpanded: true,
+          items: horas
+              .map((h) => DropdownMenuItem(value: h, child: Text(h)))
+              .toList(),
+          onChanged: (h) {
+            if (h != null) onChanged(h);
+          },
+        ),
+      ),
+    );
+  }
+}

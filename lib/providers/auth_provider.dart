@@ -76,12 +76,17 @@ class AuthNotifier extends AsyncNotifier<void> {
         password: password,
       );
       uid = cred.user!.uid;
-      await ref.read(usuariosRepositoryProvider).crearPerfil(
-            uid: uid!,
-            nombre: nombre,
-            email: email.trim(),
-            rol: rol,
-          );
+      try {
+        await ref.read(usuariosRepositoryProvider).crearPerfil(
+              uid: uid!,
+              nombre: nombre,
+              email: email.trim(),
+              rol: rol,
+            );
+      } catch (_) {
+        await cred.user!.delete();
+        rethrow;
+      }
     });
     return uid;
   }

@@ -242,8 +242,9 @@ class _TicketCard extends StatelessWidget {
                           ),
                           Text(
                             // Muestra los primeros 8 caracteres del UUID
-                            reserva.codigoAcceso
-                                .substring(0, 8)
+                            (reserva.codigoAcceso.length >= 8
+                                    ? reserva.codigoAcceso.substring(0, 8)
+                                    : reserva.codigoAcceso)
                                 .toUpperCase(),
                             style: GoogleFonts.bricolageGrotesque(
                               fontSize: 14,

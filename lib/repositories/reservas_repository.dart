@@ -31,24 +31,31 @@ class ReservasRepository {
             .toList());
   }
 
-  /// Stream de reservas de un usuario.
+  /// Stream de reservas de un usuario — ordenadas client-side para evitar
+  /// necesidad de índice compuesto (where + orderBy en campos distintos).
   Stream<List<ReservaModel>> streamMisReservas(String userId) {
     return _db
         .collection(FirestorePaths.reservas)
         .where('userId', isEqualTo: userId)
-        .orderBy('creadoEn', descending: true)
         .snapshots()
-        .map((s) => s.docs.map(ReservaModel.fromFirestore).toList());
+        .map((s) {
+      final lista = s.docs.map(ReservaModel.fromFirestore).toList();
+      lista.sort((a, b) => b.creadoEn.compareTo(a.creadoEn));
+      return lista;
+    });
   }
 
-  /// Stream de reservas de un complejo (admin).
+  /// Stream de reservas de un complejo (admin) — ordenadas client-side.
   Stream<List<ReservaModel>> streamReservasComplejo(String complejoId) {
     return _db
         .collection(FirestorePaths.reservas)
         .where('complejoId', isEqualTo: complejoId)
-        .orderBy('fecha', descending: true)
         .snapshots()
-        .map((s) => s.docs.map(ReservaModel.fromFirestore).toList());
+        .map((s) {
+      final lista = s.docs.map(ReservaModel.fromFirestore).toList();
+      lista.sort((a, b) => b.fecha.compareTo(a.fecha));
+      return lista;
+    });
   }
 
   /// Reservas del complejo para una fecha específica (admin).
