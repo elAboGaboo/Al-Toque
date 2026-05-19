@@ -1,23 +1,33 @@
 // screens/admin/admin_ingresos_screen.dart
+import 'dart:math';
+
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:intl/intl.dart';
 
 import '../../core/theme/app_colors.dart';
+import '../../models/reserva_model.dart';
+import '../../providers/auth_provider.dart';
+import '../../providers/ingresos_provider.dart';
 
 class AdminIngresosScreen extends ConsumerWidget {
   const AdminIngresosScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final complejoId = ref.watch(complejoIdProvider) ?? '';
+    final statsAsync = ref.watch(ingresosStatsProvider(complejoId));
+
     return Scaffold(
       backgroundColor: AppColors.abg,
       appBar: AppBar(
         backgroundColor: AppColors.abg,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: AppColors.atx),
+          icon: const Icon(Icons.arrow_back_ios_new_rounded,
+              size: 18, color: AppColors.atx),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
@@ -29,66 +39,116 @@ class AdminIngresosScreen extends ConsumerWidget {
           ),
         ),
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // ── Main KPI ─────────────────────────────
-            const _MainRevenueCard(),
-
-            const SizedBox(height: 24),
-
-            // ── Secondary KPIs ───────────────────────
-            const Row(
-              children: [
-                Expanded(child: _SmallKpi(label: 'Ticket Med.', val: 'S/ 48.50', color: AppColors.aacc)),
-                SizedBox(width: 12),
-                Expanded(child: _SmallKpi(label: 'Tasa Cancel.', val: '2.4%', color: AppColors.red)),
-              ],
-            ),
-
-            const SizedBox(height: 32),
-
-            // ── Chart ───────────────────────────────
-            Text(
-              'Rendimiento Semanal',
-              style: GoogleFonts.bricolageGrotesque(
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-                color: AppColors.atx,
-              ),
-            ),
-            const SizedBox(height: 16),
-            const _RevenueBarChart(),
-
-            const SizedBox(height: 32),
-
-            // ── Recent Transactions ──────────────────
-            Text(
-              'Transacciones Recientes',
-              style: GoogleFonts.bricolageGrotesque(
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-                color: AppColors.atx,
-              ),
-            ),
-            const SizedBox(height: 16),
-            const _TransactionItem(user: 'Juan D.', date: 'Hoy, 18:24', amount: 'S/ 40.00', method: 'Yape'),
-            const _TransactionItem(user: 'Maria P.', date: 'Hoy, 17:10', amount: 'S/ 60.00', method: 'Plin'),
-            const _TransactionItem(user: 'Carlos R.', date: 'Hoy, 15:05', amount: 'S/ 40.00', method: 'Efectivo'),
-          ],
+      body: statsAsync.when(
+        loading: () => const Center(
+          child: CircularProgressIndicator(color: AppColors.aacc),
         ),
+        error: (e, _) => Center(
+          child: Text('Error cargando datos: $e',
+              style: GoogleFonts.outfit(color: AppColors.ared)),
+        ),
+        data: (stats) => _IngresosBody(stats: stats),
       ),
     );
   }
 }
 
-class _MainRevenueCard extends StatelessWidget {
-  const _MainRevenueCard();
+// ── Cuerpo principal ──────────────────────────────────────────────────────────
+
+class _IngresosBody extends StatelessWidget {
+  final IngresosStats stats;
+  const _IngresosBody({required this.stats});
 
   @override
   Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── KPI principal ────────────────────────
+          _MainRevenueCard(stats: stats),
+
+          const SizedBox(height: 24),
+
+          // ── KPIs secundarios ─────────────────────
+          Row(
+            children: [
+              Expanded(
+                child: _SmallKpi(
+                  label: 'Ticket Prom.',
+                  val: 'S/ ${stats.ticketPromedio.toStringAsFixed(2)}',
+                  color: AppColors.aacc,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _SmallKpi(
+                  label: 'Tasa Cancel.',
+                  val: '${stats.tasaCancelacionPct.toStringAsFixed(1)}%',
+                  color: AppColors.red,
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 32),
+
+          // ── Gráfico semanal ───────────────────────
+          Text(
+            'Rendimiento Semanal',
+            style: GoogleFonts.bricolageGrotesque(
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+              color: AppColors.atx,
+            ),
+          ),
+          const SizedBox(height: 16),
+          _RevenueBarChart(datos: stats.ingresosPorDia),
+
+          const SizedBox(height: 32),
+
+          // ── Transacciones recientes ───────────────
+          Text(
+            'Transacciones Recientes',
+            style: GoogleFonts.bricolageGrotesque(
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+              color: AppColors.atx,
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          if (stats.recientes.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 24),
+              child: Center(
+                child: Text(
+                  'Sin reservas aún',
+                  style:
+                      GoogleFonts.outfit(fontSize: 14, color: AppColors.atx3),
+                ),
+              ),
+            )
+          else
+            ...stats.recientes.map((r) => _TransactionItem(reserva: r)),
+        ],
+      ),
+    );
+  }
+}
+
+// ── KPI principal ─────────────────────────────────────────────────────────────
+
+class _MainRevenueCard extends StatelessWidget {
+  final IngresosStats stats;
+  const _MainRevenueCard({required this.stats});
+
+  @override
+  Widget build(BuildContext context) {
+    final variacion = stats.variacionPct;
+    final subiendo = variacion >= 0;
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(24),
@@ -100,7 +160,10 @@ class _MainRevenueCard extends StatelessWidget {
         ),
         borderRadius: BorderRadius.circular(28),
         boxShadow: [
-          BoxShadow(color: AppColors.aacc.withValues(alpha: 0.3), blurRadius: 24, offset: const Offset(0, 8)),
+          BoxShadow(
+              color: AppColors.aacc.withValues(alpha: 0.3),
+              blurRadius: 24,
+              offset: const Offset(0, 8)),
         ],
       ),
       child: Column(
@@ -116,7 +179,7 @@ class _MainRevenueCard extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'S/ 8,420.00',
+            'S/ ${NumberFormat('#,##0.00', 'es').format(stats.totalMes)}',
             style: GoogleFonts.bricolageGrotesque(
               fontSize: 32,
               fontWeight: FontWeight.w800,
@@ -126,10 +189,18 @@ class _MainRevenueCard extends StatelessWidget {
           const SizedBox(height: 12),
           Row(
             children: [
-              const Icon(Icons.trending_up_rounded, size: 16, color: Colors.black),
+              Icon(
+                subiendo
+                    ? Icons.trending_up_rounded
+                    : Icons.trending_down_rounded,
+                size: 16,
+                color: Colors.black,
+              ),
               const SizedBox(width: 4),
               Text(
-                '+14% vs mes anterior',
+                stats.totalMesAnterior == 0
+                    ? 'Primer mes de datos'
+                    : '${subiendo ? '+' : ''}${variacion.toStringAsFixed(1)}% vs mes anterior',
                 style: GoogleFonts.plusJakartaSans(
                   fontSize: 12,
                   fontWeight: FontWeight.w700,
@@ -144,11 +215,14 @@ class _MainRevenueCard extends StatelessWidget {
   }
 }
 
+// ── KPI secundario ────────────────────────────────────────────────────────────
+
 class _SmallKpi extends StatelessWidget {
   final String label;
   final String val;
   final Color color;
-  const _SmallKpi({required this.label, required this.val, required this.color});
+  const _SmallKpi(
+      {required this.label, required this.val, required this.color});
 
   @override
   Widget build(BuildContext context) {
@@ -162,7 +236,9 @@ class _SmallKpi extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: GoogleFonts.plusJakartaSans(fontSize: 11, color: AppColors.atx3)),
+          Text(label,
+              style:
+                  GoogleFonts.plusJakartaSans(fontSize: 11, color: AppColors.atx3)),
           const SizedBox(height: 4),
           Text(
             val,
@@ -178,11 +254,17 @@ class _SmallKpi extends StatelessWidget {
   }
 }
 
+// ── Gráfico de barras semanal ─────────────────────────────────────────────────
+
 class _RevenueBarChart extends StatelessWidget {
-  const _RevenueBarChart();
+  final List<double> datos;
+  const _RevenueBarChart({required this.datos});
 
   @override
   Widget build(BuildContext context) {
+    final maxVal = datos.fold<double>(0, max);
+    final maxY = maxVal == 0 ? 100.0 : (maxVal * 1.3).ceilToDouble();
+
     return Container(
       height: 200,
       padding: const EdgeInsets.all(20),
@@ -194,8 +276,19 @@ class _RevenueBarChart extends StatelessWidget {
       child: BarChart(
         BarChartData(
           alignment: BarChartAlignment.spaceAround,
-          maxY: 1000,
-          barTouchData: BarTouchData(enabled: false),
+          maxY: maxY,
+          barTouchData: BarTouchData(
+            enabled: true,
+            touchTooltipData: BarTouchTooltipData(
+              getTooltipItem: (_, _, rod, _) => BarTooltipItem(
+                'S/ ${rod.toY.toStringAsFixed(0)}',
+                GoogleFonts.outfit(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600),
+              ),
+            ),
+          ),
           titlesData: FlTitlesData(
             show: true,
             bottomTitles: AxisTitles(
@@ -203,14 +296,20 @@ class _RevenueBarChart extends StatelessWidget {
                 showTitles: true,
                 getTitlesWidget: (v, _) => Padding(
                   padding: const EdgeInsets.only(top: 8),
-                  child: Text(['L', 'M', 'M', 'J', 'V', 'S', 'D'][v.toInt() % 7],
-                      style: GoogleFonts.plusJakartaSans(fontSize: 10, color: AppColors.atx3)),
+                  child: Text(
+                    ['L', 'M', 'M', 'J', 'V', 'S', 'D'][v.toInt() % 7],
+                    style: GoogleFonts.plusJakartaSans(
+                        fontSize: 10, color: AppColors.atx3),
+                  ),
                 ),
               ),
             ),
-            leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            leftTitles:
+                const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            topTitles:
+                const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            rightTitles:
+                const AxisTitles(sideTitles: SideTitles(showTitles: false)),
           ),
           gridData: const FlGridData(show: false),
           borderData: FlBorderData(show: false),
@@ -219,8 +318,10 @@ class _RevenueBarChart extends StatelessWidget {
               x: i,
               barRods: [
                 BarChartRodData(
-                  toY: [400, 600, 450, 800, 950, 1000, 850][i].toDouble(),
-                  color: AppColors.aacc,
+                  toY: datos[i],
+                  color: datos[i] == maxVal && maxVal > 0
+                      ? AppColors.aacc
+                      : AppColors.aacc.withValues(alpha: 0.45),
                   width: 14,
                   borderRadius: BorderRadius.circular(4),
                 ),
@@ -233,12 +334,44 @@ class _RevenueBarChart extends StatelessWidget {
   }
 }
 
+// ── Ítem de transacción ───────────────────────────────────────────────────────
+
 class _TransactionItem extends StatelessWidget {
-  final String user;
-  final String date;
-  final String amount;
-  final String method;
-  const _TransactionItem({required this.user, required this.date, required this.amount, required this.method});
+  final ReservaModel reserva;
+  const _TransactionItem({required this.reserva});
+
+  String get _metodoLabel {
+    return switch (reserva.metodoPago) {
+      'yape' => '💜 Yape',
+      'plin' => '💙 Plin',
+      'efectivo' => '💵 Efectivo',
+      'tarjeta' => '💳 Tarjeta',
+      'transferencia' => '🏦 Transferencia',
+      _ => reserva.metodoPago,
+    };
+  }
+
+  String get _fechaLabel {
+    final now = DateTime.now();
+    final hoy = DateTime(now.year, now.month, now.day);
+    final ayer = hoy.subtract(const Duration(days: 1));
+    final dia =
+        DateTime(reserva.creadoEn.year, reserva.creadoEn.month, reserva.creadoEn.day);
+    final hora =
+        '${reserva.creadoEn.hour.toString().padLeft(2, '0')}:${reserva.creadoEn.minute.toString().padLeft(2, '0')}';
+    if (dia == hoy) return 'Hoy, $hora';
+    if (dia == ayer) return 'Ayer, $hora';
+    return '${reserva.creadoEn.day}/${reserva.creadoEn.month}, $hora';
+  }
+
+  String get _idCorto =>
+      reserva.id.length >= 6 ? '#${reserva.id.substring(0, 6).toUpperCase()}' : '#—';
+
+  Color get _estadoColor {
+    if (reserva.estaConfirmada) return AppColors.aacc;
+    if (reserva.estaCancelada) return AppColors.ared;
+    return AppColors.aamber;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -254,23 +387,33 @@ class _TransactionItem extends StatelessWidget {
         children: [
           Container(
             padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(color: AppColors.asur2, borderRadius: BorderRadius.circular(12)),
-            child: const Icon(Icons.payment_rounded, size: 18, color: AppColors.aacc),
+            decoration: BoxDecoration(
+                color: AppColors.asur2,
+                borderRadius: BorderRadius.circular(12)),
+            child: Icon(Icons.payment_rounded, size: 18, color: _estadoColor),
           ),
           const SizedBox(width: 16),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(user,
-                    style: GoogleFonts.plusJakartaSans(
-                        fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.atx)),
-                Text('$date · $method', style: GoogleFonts.plusJakartaSans(fontSize: 11, color: AppColors.atx3)),
+                Text(
+                  'Reserva $_idCorto',
+                  style: GoogleFonts.plusJakartaSans(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.atx),
+                ),
+                Text(
+                  '$_fechaLabel · $_metodoLabel',
+                  style: GoogleFonts.plusJakartaSans(
+                      fontSize: 11, color: AppColors.atx3),
+                ),
               ],
             ),
           ),
           Text(
-            amount,
+            'S/ ${reserva.precioTotal.toStringAsFixed(2)}',
             style: GoogleFonts.bricolageGrotesque(
               fontSize: 15,
               fontWeight: FontWeight.w700,

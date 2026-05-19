@@ -4,24 +4,20 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/theme/app_colors.dart';
+import '../../providers/auth_provider.dart';
+import '../../providers/ingresos_provider.dart';
 
 class AdminIAScreen extends ConsumerWidget {
   const AdminIAScreen({super.key});
 
-  // Heatmap: 5 horas × 7 días. Valor 0..1 = intensidad de demanda.
-  static const _heatmap = <List<double>>[
-    [0.55, 0.65, 0.20, 0.70, 0.85, 0.75, 0.50], // 10am
-    [0.60, 0.70, 0.25, 0.78, 0.90, 0.80, 0.55], // 1pm
-    [0.70, 0.75, 0.45, 0.82, 0.92, 0.88, 0.65], // 4pm
-    [0.85, 0.90, 0.75, 0.92, 1.00, 0.95, 0.80], // 7pm — pico
-    [0.65, 0.70, 0.50, 0.75, 0.85, 0.78, 0.55], // 10pm
-  ];
-
-  static const _horas = ['10am', '1pm', '4pm', '7pm', '10pm'];
-  static const _dias = ['Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sa', 'Do'];
+  static const _franjaLabels = ['10am', '1pm', '4pm', '7pm', '10pm'];
+  static const _diaLabels = ['Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sa', 'Do'];
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final complejoId = ref.watch(complejoIdProvider) ?? '';
+    final statsAsync = ref.watch(ocupacionStatsProvider(complejoId));
+
     return Scaffold(
       backgroundColor: AppColors.abg,
       body: SafeArea(
@@ -41,7 +37,7 @@ class AdminIAScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 2),
               Text(
-                'Demanda esperada por día y hora',
+                'Demanda real por día y franja horaria',
                 style: GoogleFonts.plusJakartaSans(
                   fontSize: 12,
                   color: AppColors.atx2,
@@ -49,58 +45,39 @@ class AdminIAScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 16),
 
-              const _HeatmapCard(heatmap: _heatmap, horas: _horas, dias: _dias),
-
-              const SizedBox(height: 16),
-
-              _Card(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Insights del modelo',
-                      style: GoogleFonts.bricolageGrotesque(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.atx,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    const _InsightItem(
-                      icon: Icons.auto_graph_rounded,
-                      iconColor: AppColors.aacc,
-                      title: 'Pico: Viernes 7pm · 95%',
-                      description:
-                          'Precio dinámico recomendado. Potencial +S/180 semanales.',
-                      tagText: 'Alta confianza 94%',
-                      tagColor: AppColors.aacc,
-                    ),
-                    const _InsightDivider(),
-                    const _InsightItem(
-                      icon: Icons.warning_amber_rounded,
-                      iconColor: AppColors.aamber,
-                      title: 'Valle: Miércoles 10am-1pm',
-                      description:
-                          '22% ocupación esperada. Descuentos automáticos sugeridos.',
-                      tagText: 'Oportunidad',
-                      tagColor: AppColors.aamber,
-                    ),
-                    const _InsightDivider(),
-                    const _InsightItem(
-                      icon: Icons.trending_up_rounded,
-                      iconColor: AppColors.ablu,
-                      title: 'Tendencia semanal +31%',
-                      description:
-                          'IA detecta temporada de campeonatos escolares.',
-                      tagText: 'Confirmado',
-                      tagColor: AppColors.ablu,
-                    ),
-                  ],
+              // ── Heatmap ───────────────────────────────
+              statsAsync.when(
+                loading: () => const SizedBox(
+                  height: 160,
+                  child: Center(
+                      child: CircularProgressIndicator(color: AppColors.aacc)),
+                ),
+                error: (e, _) => _Card(
+                  child: Text('Error cargando datos: $e',
+                      style: GoogleFonts.outfit(color: AppColors.ared)),
+                ),
+                data: (stats) => _HeatmapCard(
+                  heatmap: stats.heatmap,
+                  horas: _franjaLabels,
+                  dias: _diaLabels,
                 ),
               ),
 
               const SizedBox(height: 16),
 
+              // ── Insights dinámicos ────────────────────
+              _Card(
+                child: statsAsync.when(
+                  loading: () => const Center(
+                      child: CircularProgressIndicator(color: AppColors.aacc)),
+                  error: (_, _) => const SizedBox.shrink(),
+                  data: (stats) => _InsightsSection(stats: stats),
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              // ── Parámetros (estáticos — describen el modelo conceptual) ──
               _Card(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -135,9 +112,9 @@ class AdminIAScreen extends ConsumerWidget {
                     ),
                     const _InsightDivider(),
                     _ParamRow(
-                      label: 'Entrenamiento',
+                      label: 'Variables',
                       valueWidget: Text(
-                        '18 meses · 24k registros',
+                        'Clima · día · feriados',
                         style: GoogleFonts.plusJakartaSans(
                           fontSize: 12,
                           color: AppColors.atx,
@@ -147,9 +124,9 @@ class AdminIAScreen extends ConsumerWidget {
                     ),
                     const _InsightDivider(),
                     _ParamRow(
-                      label: 'Variables',
+                      label: 'Fuente de datos',
                       valueWidget: Text(
-                        'Clima · día · feriados',
+                        'Reservas históricas · Firestore',
                         style: GoogleFonts.plusJakartaSans(
                           fontSize: 12,
                           color: AppColors.atx,
@@ -167,6 +144,80 @@ class AdminIAScreen extends ConsumerWidget {
     );
   }
 }
+
+// ── Sección de insights dinámicos ─────────────────────────────────────────────
+
+class _InsightsSection extends StatelessWidget {
+  final OcupacionStats stats;
+  const _InsightsSection({required this.stats});
+
+  @override
+  Widget build(BuildContext context) {
+    if (stats.totalReservas == 0) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: Text(
+          'Sin datos suficientes para generar insights.\nCuando haya reservas registradas aparecerán aquí.',
+          style: GoogleFonts.outfit(
+              fontSize: 13, color: AppColors.atx2, height: 1.5),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Insights del modelo',
+          style: GoogleFonts.bricolageGrotesque(
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+            color: AppColors.atx,
+          ),
+        ),
+        const SizedBox(height: 12),
+
+        // Pico
+        _InsightItem(
+          icon: Icons.auto_graph_rounded,
+          iconColor: AppColors.aacc,
+          title: 'Pico: ${stats.picoDia} ${stats.picoHora} · '
+              '${stats.picoOcupacionPct.toInt()}% relativo',
+          description:
+              'Franja de mayor demanda histórica. Considera precio dinámico en este horario.',
+          tagText: 'Alta demanda',
+          tagColor: AppColors.aacc,
+        ),
+        const _InsightDivider(),
+
+        // Valle
+        _InsightItem(
+          icon: Icons.warning_amber_rounded,
+          iconColor: AppColors.aamber,
+          title: 'Valle: ${stats.valleDia} ${stats.valleHora}',
+          description:
+              'Franja con menor ocupación. Flash Slots con descuento automático pueden ayudar.',
+          tagText: 'Oportunidad',
+          tagColor: AppColors.aamber,
+        ),
+        const _InsightDivider(),
+
+        // Total
+        _InsightItem(
+          icon: Icons.bar_chart_rounded,
+          iconColor: AppColors.ablu,
+          title: '${stats.totalReservas} reservas analizadas',
+          description:
+              'El mapa de calor se actualiza en tiempo real con cada nueva reserva.',
+          tagText: 'Datos en vivo',
+          tagColor: AppColors.ablu,
+        ),
+      ],
+    );
+  }
+}
+
+// ── Heatmap ───────────────────────────────────────────────────────────────────
 
 class _HeatmapCard extends StatelessWidget {
   final List<List<double>> heatmap;
@@ -198,6 +249,22 @@ class _HeatmapCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Cabecera días
+          Padding(
+            padding: const EdgeInsets.only(left: 40, bottom: 6),
+            child: Row(
+              children: dias
+                  .map((d) => Expanded(
+                        child: Center(
+                          child: Text(d,
+                              style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 9, color: AppColors.atx3)),
+                        ),
+                      ))
+                  .toList(),
+            ),
+          ),
+          // Filas
           ...List.generate(horas.length, (row) {
             return Padding(
               padding: const EdgeInsets.only(bottom: 5),
@@ -230,7 +297,8 @@ class _HeatmapCard extends StatelessWidget {
                               ),
                             ),
                           ),
-                          if (col < dias.length - 1) const SizedBox(width: 4),
+                          if (col < dias.length - 1)
+                            const SizedBox(width: 4),
                         ],
                       ],
                     ),
@@ -239,17 +307,16 @@ class _HeatmapCard extends StatelessWidget {
               ),
             );
           }),
+
           const SizedBox(height: 6),
+
+          // Leyenda
           Row(
             children: [
               const SizedBox(width: 40),
-              Text(
-                'Bajo',
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 9,
-                  color: AppColors.atx3,
-                ),
-              ),
+              Text('Bajo',
+                  style: GoogleFonts.plusJakartaSans(
+                      fontSize: 9, color: AppColors.atx3)),
               const SizedBox(width: 6),
               ...[
                 const Color(0xFF1A3A28),
@@ -269,13 +336,9 @@ class _HeatmapCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 6),
-              Text(
-                'Alto',
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 9,
-                  color: AppColors.atx3,
-                ),
-              ),
+              Text('Alto',
+                  style: GoogleFonts.plusJakartaSans(
+                      fontSize: 9, color: AppColors.atx3)),
             ],
           ),
         ],
@@ -283,6 +346,8 @@ class _HeatmapCard extends StatelessWidget {
     );
   }
 }
+
+// ── Sub-widgets reutilizados ──────────────────────────────────────────────────
 
 class _Card extends StatelessWidget {
   final Widget child;
@@ -357,8 +422,8 @@ class _InsightItem extends StatelessWidget {
               ),
               const SizedBox(height: 6),
               Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 8, vertical: 3),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
                   color: tagColor.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(5),
@@ -405,10 +470,8 @@ class _ParamRow extends StatelessWidget {
         Expanded(
           child: Text(
             label,
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 12,
-              color: AppColors.atx2,
-            ),
+            style:
+                GoogleFonts.plusJakartaSans(fontSize: 12, color: AppColors.atx2),
           ),
         ),
         valueWidget,
