@@ -1,3 +1,5 @@
+// DEAD CODE — Widget no importado en ninguna pantalla activa.
+// Puede eliminarse sin afectar el proyecto.
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 

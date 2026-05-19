@@ -10,7 +10,7 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 
     <application
-        android:label="CanchApp"
+        android:label="Al Toque"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="false"
@@ -20,11 +20,6 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2"/>
-
-        <!-- Google Maps API Key -->
-        <meta-data
-            android:name="com.google.android.geo.API_KEY"
-            android:value="${MAPS_API_KEY}"/>
 
         <!-- FCM channel icon (blanco 24x24) -->
         <meta-data

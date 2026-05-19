@@ -51,8 +51,20 @@ class FiltrosPartidos {
       );
 }
 
+class FiltrosPartidosNotifier extends Notifier<FiltrosPartidos> {
+  @override
+  FiltrosPartidos build() => const FiltrosPartidos();
+
+  /// Equivalente al .update() de StateNotifier — aplica una transformación al estado.
+  void update(FiltrosPartidos Function(FiltrosPartidos) updater) {
+    state = updater(state);
+  }
+}
+
 final filtrosPartidosProvider =
-    StateProvider<FiltrosPartidos>((_) => const FiltrosPartidos());
+    NotifierProvider<FiltrosPartidosNotifier, FiltrosPartidos>(
+  FiltrosPartidosNotifier.new,
+);
 
 /// Partidos abiertos filtrados por deporte/fecha.
 final partidosFiltradosProvider =

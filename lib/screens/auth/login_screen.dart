@@ -1,3 +1,5 @@
+// DEAD CODE — Este archivo ya no se usa. La lógica de login fue migrada a
+// welcome_screen.dart (modo "login"). Puede eliminarse sin afectar el proyecto.
 // screens/auth/login_screen.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -96,7 +98,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     ),
                     const SizedBox(width: 12),
                     Text(
-                      'CanchApp',
+                      'Al Toque',
                       style: GoogleFonts.bricolageGrotesque(
                         fontSize: 26,
                         fontWeight: FontWeight.w800,

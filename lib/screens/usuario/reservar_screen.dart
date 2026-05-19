@@ -3,14 +3,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:intl/intl.dart';
+
 import '../../core/theme/app_colors.dart';
-import '../../core/utils/precio_utils.dart';
+import '../../core/utils/app_date_utils.dart';
 import '../../models/cancha_model.dart';
 import '../../models/complejo_model.dart';
 import '../../providers/complejos_provider.dart';
 import '../../providers/reservas_provider.dart';
-import '../../widgets/common/error_widget.dart';
-import '../../widgets/common/loading_skeleton.dart';
 
 class ReservarScreen extends ConsumerStatefulWidget {
   final String complejoId;
@@ -29,64 +29,62 @@ class ReservarScreen extends ConsumerStatefulWidget {
 class _ReservarScreenState extends ConsumerState<ReservarScreen> {
   DateTime _fechaSeleccionada = DateTime.now();
   String? _horaSeleccionada;
-  int _duracion = 1;
   String _metodoPago = 'yape';
-
-  // Horas disponibles (07:00 - 22:00)
-  final List<String> _todasLasHoras = List.generate(
-    16,
-    (i) => '${(i + 7).toString().padLeft(2, '0')}:00',
-  );
 
   @override
   Widget build(BuildContext context) {
+    final canchaAsync = ref.watch(
+      canchaFutureProvider((
+        complejoId: widget.complejoId,
+        canchaId: widget.canchaId,
+      )),
+    );
     final complejoAsync =
         ref.watch(complejoFutureProvider(widget.complejoId));
-    final canchaAsync = ref.watch(canchaFutureProvider(
-        (complejoId: widget.complejoId, canchaId: widget.canchaId)));
 
     return Scaffold(
-      backgroundColor: AppColors.paper,
+      backgroundColor: AppColors.bg,
       appBar: AppBar(
-        backgroundColor: AppColors.paper,
+        backgroundColor: AppColors.bg,
+        elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_rounded),
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
           onPressed: () => context.pop(),
         ),
-        title: Text(
-          'Reservar cancha',
-          style: GoogleFonts.bricolageGrotesque(
-            fontSize: 18,
-            fontWeight: FontWeight.w700,
+        title: canchaAsync.when(
+          data: (c) => Text(
+            c?.nombre ?? 'Reservar cancha',
+            style: GoogleFonts.bricolageGrotesque(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          loading: () => const SizedBox.shrink(),
+          error: (_, _) => Text(
+            'Reservar cancha',
+            style: GoogleFonts.bricolageGrotesque(
+                fontSize: 18, fontWeight: FontWeight.w700),
           ),
         ),
       ),
-      body: complejoAsync.when(
-        loading: () => const Center(
-          child: CircularProgressIndicator(color: AppColors.green),
-        ),
-        error: (e, _) => AppErrorWidget(
-          mensaje: 'No se pudo cargar la cancha',
-          onReintentar: () => ref.invalidate(
-              complejoFutureProvider(widget.complejoId)),
-        ),
-        data: (complejo) {
-          if (complejo == null) {
-            return const AppErrorWidget(
-                mensaje: 'Complejo no encontrado');
+      body: canchaAsync.when(
+        loading: () =>
+            const Center(child: CircularProgressIndicator()),
+        error: (e, _) => Center(child: Text('Error: $e')),
+        data: (cancha) {
+          if (cancha == null) {
+            return const Center(child: Text('Cancha no encontrada'));
           }
-          return canchaAsync.when(
-            loading: () => const Center(
-              child: CircularProgressIndicator(color: AppColors.green),
-            ),
-            error: (e, _) =>
-                const AppErrorWidget(mensaje: 'Cancha no encontrada'),
-            data: (cancha) {
-              if (cancha == null) {
-                return const AppErrorWidget(
-                    mensaje: 'Cancha no encontrada');
+          return complejoAsync.when(
+            loading: () =>
+                const Center(child: CircularProgressIndicator()),
+            error: (e, _) => Center(child: Text('Error: $e')),
+            data: (complejo) {
+              if (complejo == null) {
+                return const Center(
+                    child: Text('Complejo no encontrado'));
               }
-              return _buildContenido(complejo, cancha);
+              return _buildBody(context, cancha, complejo);
             },
           );
         },
@@ -94,166 +92,207 @@ class _ReservarScreenState extends ConsumerState<ReservarScreen> {
     );
   }
 
-  Widget _buildContenido(ComplejoModel complejo, CanchaModel cancha) {
-    final reservasAsync = ref.watch(disponibilidadProvider((
-      complejoId: widget.complejoId,
-      canchaId: widget.canchaId,
-      fecha: _fechaSeleccionada,
-    )));
+  Widget _buildBody(
+      BuildContext context, CanchaModel cancha, ComplejoModel complejo) {
+    final disponibilidadAsync = ref.watch(
+      disponibilidadProvider((
+        complejoId: widget.complejoId,
+        canchaId: widget.canchaId,
+        fecha: _fechaSeleccionada,
+      )),
+    );
 
-    final reservasOcupadas = reservasAsync.valueOrNull ?? [];
-    final horasOcupadas = reservasOcupadas
-        .map((r) => r.horaInicio)
-        .toSet();
+    final slots = AppDateUtils.generarSlots(
+      apertura: complejo.horarioApertura,
+      cierre: complejo.horarioCierre,
+    );
 
-    final precioCalculado = _horaSeleccionada != null
-        ? cancha.precioBase * _duracion
-        : 0.0;
+    final reservaNotifier = ref.watch(reservaNotifierProvider);
+    final isLoading = reservaNotifier.isLoading;
 
-    return Column(
+    return Stack(
       children: [
-        // Contenido scrollable
-        Expanded(
-          child: ListView(
-            padding: const EdgeInsets.all(16),
+        SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Info cancha
-              _CanchaInfoCard(complejo: complejo, cancha: cancha),
-              const SizedBox(height: 20),
+              // ── Info de cancha ────────────────────────────
+              _CanchaInfoBanner(cancha: cancha, complejo: complejo),
 
-              // Selector de fecha
-              const _SeccionTitulo(titulo: 'Selecciona la fecha', icono: '📅'),
-              const SizedBox(height: 10),
-              _SelectorFecha(
-                fechaSeleccionada: _fechaSeleccionada,
-                onFechaChanged: (f) =>
-                    setState(() {
-                      _fechaSeleccionada = f;
-                      _horaSeleccionada = null;
-                    }),
+              // ── Calendario ───────────────────────────────
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 14),
+                child: _CalendarHeader(fecha: _fechaSeleccionada),
               ),
-              const SizedBox(height: 20),
-
-              // Selector de duración
-              const _SeccionTitulo(titulo: 'Duración', icono: '⏱️'),
-              const SizedBox(height: 10),
-              _SelectorDuracion(
-                duracion: _duracion,
-                onChanged: (d) => setState(() => _duracion = d),
+              _HorizontalCalendar(
+                selectedDate: _fechaSeleccionada,
+                onDateSelected: (d) => setState(() {
+                  _fechaSeleccionada = d;
+                  _horaSeleccionada = null;
+                }),
               ),
-              const SizedBox(height: 20),
 
-              // Grid de horas
-              const _SeccionTitulo(titulo: 'Horario disponible', icono: '🕐'),
-              const SizedBox(height: 10),
-              reservasAsync.when(
-                loading: () => const HorarioGridSkeleton(),
-                error: (_, __) => const AppErrorWidget(
-                    mensaje: 'Error cargando disponibilidad'),
-                data: (_) => _GridHoras(
-                  horas: _todasLasHoras,
-                  horasOcupadas: horasOcupadas,
-                  horaSeleccionada: _horaSeleccionada,
-                  duracion: _duracion,
-                  precioBase: cancha.precioBase,
-                  onHoraSelected: (h) =>
-                      setState(() => _horaSeleccionada = h),
+              const SizedBox(height: 24),
+
+              // ── Sugerencia IA ─────────────────────────────
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 20),
+                child: _AISuggestionBanner(),
+              ),
+
+              const SizedBox(height: 24),
+
+              // ── Selector de Slots ─────────────────────────
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Text(
+                  'Horarios Disponibles',
+                  style: GoogleFonts.bricolageGrotesque(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.tx,
+                  ),
                 ),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 14),
 
-              // Método de pago
-              const _SeccionTitulo(titulo: 'Método de pago', icono: '💳'),
-              const SizedBox(height: 10),
-              _SelectorPago(
-                seleccionado: _metodoPago,
-                onChanged: (m) => setState(() => _metodoPago = m),
+              disponibilidadAsync.when(
+                loading: () => const Padding(
+                  padding: EdgeInsets.all(20),
+                  child: Center(child: CircularProgressIndicator()),
+                ),
+                error: (_, _) => Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: _TimeSlotsGrid(
+                    slots: slots,
+                    ocupadas: const [],
+                    fecha: _fechaSeleccionada,
+                    precio: cancha.precioBase,
+                    selectedTime: _horaSeleccionada,
+                    onTimeSelected: (t) =>
+                        setState(() => _horaSeleccionada = t),
+                  ),
+                ),
+                data: (reservas) => Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: _TimeSlotsGrid(
+                    slots: slots,
+                    ocupadas: reservas
+                        .where((r) => r.estado != 'cancelada')
+                        .map((r) => r.horaInicio)
+                        .toList(),
+                    fecha: _fechaSeleccionada,
+                    precio: cancha.precioBase,
+                    selectedTime: _horaSeleccionada,
+                    onTimeSelected: (t) =>
+                        setState(() => _horaSeleccionada = t),
+                  ),
+                ),
               ),
-              const SizedBox(height: 100), // espacio para el botón
+
+              const SizedBox(height: 140),
             ],
           ),
         ),
 
-        // Botón confirmar (fijo abajo)
-        _BarraConfirmar(
-          horaSeleccionada: _horaSeleccionada,
-          duracion: _duracion,
-          precio: precioCalculado,
-          onConfirmar: _horaSeleccionada != null
-              ? () => _confirmarReserva(cancha)
-              : null,
+        // ── Bottom summary fijo ───────────────────────────
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          child: _BookingSummary(
+            selectedTime: _horaSeleccionada,
+            precio: cancha.precioBase,
+            metodoPago: _metodoPago,
+            onMetodoPagoTap: _mostrarSelectorPago,
+            isLoading: isLoading,
+            onConfirm: () => _confirmarReserva(cancha),
+          ),
         ),
       ],
+    );
+  }
+
+  void _mostrarSelectorPago() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _MetodoPagoSheet(
+        seleccionado: _metodoPago,
+        onSeleccionado: (m) {
+          setState(() => _metodoPago = m);
+          Navigator.pop(context);
+        },
+      ),
     );
   }
 
   Future<void> _confirmarReserva(CanchaModel cancha) async {
     if (_horaSeleccionada == null) return;
 
-    final horaInicioH = int.parse(_horaSeleccionada!.split(':')[0]);
-    final horaFin =
-        '${(horaInicioH + _duracion).toString().padLeft(2, '0')}:00';
-
-    final notifier = ref.read(reservaNotifierProvider.notifier);
-    final reservaId = await notifier.crearReserva(
-      complejoId: widget.complejoId,
-      canchaId: widget.canchaId,
-      fecha: _fechaSeleccionada,
-      horaInicio: _horaSeleccionada!,
-      horaFin: horaFin,
-      duracionHoras: _duracion.toDouble(),
-      precioTotal: cancha.precioBase * _duracion,
-      metodoPago: _metodoPago,
-    );
+    final horaFin = _calcularHoraFin(_horaSeleccionada!);
+    final reservaId =
+        await ref.read(reservaNotifierProvider.notifier).crearReserva(
+              complejoId: widget.complejoId,
+              canchaId: widget.canchaId,
+              fecha: _fechaSeleccionada,
+              horaInicio: _horaSeleccionada!,
+              horaFin: horaFin,
+              duracionHoras: 1,
+              precioTotal: cancha.precioBase,
+              metodoPago: _metodoPago,
+            );
 
     if (reservaId != null && mounted) {
       context.pushReplacement('/confirmacion/$reservaId');
     } else if (mounted) {
-      final state = ref.read(reservaNotifierProvider);
-      if (state.hasError) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Error al reservar. Intenta de nuevo.',
-              style: GoogleFonts.outfit(),
-            ),
-            backgroundColor: AppColors.errorRed,
-          ),
-        );
-      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Error al crear la reserva. Intenta nuevamente.'),
+          backgroundColor: AppColors.red,
+        ),
+      );
     }
+  }
+
+  String _calcularHoraFin(String horaInicio) {
+    final parts = horaInicio.split(':');
+    final hora = int.parse(parts[0]) + 1;
+    return '${hora.toString().padLeft(2, '0')}:${parts[1]}';
   }
 }
 
-// ── Sub-widgets ──────────────────────────────────────────────
+// ── Widgets ────────────────────────────────────────────────────────────────
 
-class _CanchaInfoCard extends StatelessWidget {
-  final ComplejoModel complejo;
+class _CanchaInfoBanner extends StatelessWidget {
   final CanchaModel cancha;
+  final ComplejoModel complejo;
 
-  const _CanchaInfoCard({required this.complejo, required this.cancha});
+  const _CanchaInfoBanner({required this.cancha, required this.complejo});
 
   @override
   Widget build(BuildContext context) {
     return Container(
+      margin: const EdgeInsets.fromLTRB(20, 12, 20, 0),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppColors.white,
+        color: AppColors.accLight,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.line),
+        border:
+            Border.all(color: AppColors.acc.withValues(alpha: 0.15)),
       ),
       child: Row(
         children: [
           Container(
-            width: 52,
-            height: 52,
+            width: 48,
+            height: 48,
             decoration: BoxDecoration(
-              color: AppColors.greenLight,
-              borderRadius: BorderRadius.circular(14),
+              color: AppColors.acc,
+              borderRadius: BorderRadius.circular(12),
             ),
             child: Center(
               child: Text(cancha.deporteEmoji,
-                  style: const TextStyle(fontSize: 26)),
+                  style: const TextStyle(fontSize: 22)),
             ),
           ),
           const SizedBox(width: 14),
@@ -262,37 +301,43 @@ class _CanchaInfoCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  complejo.nombre,
+                  cancha.nombre,
                   style: GoogleFonts.bricolageGrotesque(
-                    fontSize: 16,
+                    fontSize: 15,
                     fontWeight: FontWeight.w700,
-                    color: AppColors.ink,
+                    color: AppColors.tx,
                   ),
                 ),
                 Text(
-                  '${cancha.nombre} · ${cancha.deporteLabel}',
-                  style: GoogleFonts.outfit(
-                    fontSize: 13,
-                    color: AppColors.ink.withValues(alpha: 0.55),
-                  ),
+                  '${cancha.deporteLabel} · ${cancha.superficieLabel}',
+                  style: GoogleFonts.plusJakartaSans(
+                      fontSize: 12, color: AppColors.tx2),
                 ),
                 Text(
-                  cancha.superficieLabel,
-                  style: GoogleFonts.outfit(
-                    fontSize: 12,
-                    color: AppColors.ink.withValues(alpha: 0.4),
-                  ),
+                  '${complejo.horarioApertura} – ${complejo.horarioCierre}',
+                  style: GoogleFonts.plusJakartaSans(
+                      fontSize: 11, color: AppColors.tx3),
                 ),
               ],
             ),
           ),
-          Text(
-            PrecioUtils.formatear(cancha.precioBase),
-            style: GoogleFonts.bricolageGrotesque(
-              fontSize: 18,
-              fontWeight: FontWeight.w800,
-              color: AppColors.green,
-            ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                'S/${cancha.precioBase.toStringAsFixed(0)}',
+                style: GoogleFonts.bricolageGrotesque(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.acc,
+                ),
+              ),
+              Text(
+                'por hora',
+                style: GoogleFonts.plusJakartaSans(
+                    fontSize: 10, color: AppColors.tx3),
+              ),
+            ],
           ),
         ],
       ),
@@ -300,91 +345,92 @@ class _CanchaInfoCard extends StatelessWidget {
   }
 }
 
-class _SeccionTitulo extends StatelessWidget {
-  final String titulo;
-  final String icono;
-
-  const _SeccionTitulo({required this.titulo, required this.icono});
+class _CalendarHeader extends StatelessWidget {
+  final DateTime fecha;
+  const _CalendarHeader({required this.fecha});
 
   @override
   Widget build(BuildContext context) {
+    final raw = DateFormat('MMMM yyyy', 'es').format(fecha);
+    final label = raw[0].toUpperCase() + raw.substring(1);
     return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(icono, style: const TextStyle(fontSize: 16)),
-        const SizedBox(width: 8),
         Text(
-          titulo,
-          style: GoogleFonts.outfit(
+          label,
+          style: GoogleFonts.bricolageGrotesque(
             fontSize: 15,
             fontWeight: FontWeight.w600,
-            color: AppColors.ink,
+            color: AppColors.tx,
           ),
         ),
+        const Icon(Icons.calendar_month_rounded,
+            size: 16, color: AppColors.tx3),
       ],
     );
   }
 }
 
-class _SelectorFecha extends StatelessWidget {
-  final DateTime fechaSeleccionada;
-  final void Function(DateTime) onFechaChanged;
+class _HorizontalCalendar extends StatelessWidget {
+  final DateTime selectedDate;
+  final ValueChanged<DateTime> onDateSelected;
 
-  const _SelectorFecha({
-    required this.fechaSeleccionada,
-    required this.onFechaChanged,
-  });
+  const _HorizontalCalendar(
+      {required this.selectedDate, required this.onDateSelected});
 
   @override
   Widget build(BuildContext context) {
-    final hoy = DateTime.now();
-    final dias = List.generate(14, (i) => hoy.add(Duration(days: i)));
-
+    final now = DateTime.now();
     return SizedBox(
-      height: 72,
+      height: 85,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
-        itemCount: dias.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        itemCount: 14,
+        separatorBuilder: (_, _) => const SizedBox(width: 8),
         itemBuilder: (context, i) {
-          final dia = dias[i];
-          final seleccionado = dia.day == fechaSeleccionada.day &&
-              dia.month == fechaSeleccionada.month;
-          final diaNombre =
-              ['lun', 'mar', 'mié', 'jue', 'vie', 'sáb', 'dom']
-                  [dia.weekday - 1];
+          final date = now.add(Duration(days: i));
+          final isSelected = date.day == selectedDate.day &&
+              date.month == selectedDate.month &&
+              date.year == selectedDate.year;
+          final dayName =
+              ['L', 'M', 'M', 'J', 'V', 'S', 'D'][date.weekday - 1];
 
           return GestureDetector(
-            onTap: () => onFechaChanged(dia),
+            onTap: () => onDateSelected(date),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 200),
-              width: 52,
+              width: 54,
               decoration: BoxDecoration(
-                color: seleccionado ? AppColors.green : AppColors.white,
-                borderRadius: BorderRadius.circular(14),
+                color: isSelected ? AppColors.tx : AppColors.sur,
+                borderRadius: BorderRadius.circular(16),
                 border: Border.all(
-                  color: seleccionado ? AppColors.green : AppColors.line,
-                ),
+                    color:
+                        isSelected ? AppColors.tx : AppColors.bdr2),
               ),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text(
-                    diaNombre,
-                    style: GoogleFonts.outfit(
+                    dayName,
+                    style: GoogleFonts.plusJakartaSans(
                       fontSize: 11,
-                      fontWeight: FontWeight.w500,
-                      color: seleccionado
-                          ? Colors.white.withValues(alpha: 0.8)
-                          : AppColors.ink.withValues(alpha: 0.5),
+                      fontWeight: isSelected
+                          ? FontWeight.w500
+                          : FontWeight.w400,
+                      color: isSelected
+                          ? Colors.white.withValues(alpha: 0.5)
+                          : AppColors.tx3,
                     ),
                   ),
-                  const SizedBox(height: 2),
+                  const SizedBox(height: 4),
                   Text(
-                    '${dia.day}',
+                    '${date.day}',
                     style: GoogleFonts.bricolageGrotesque(
                       fontSize: 18,
                       fontWeight: FontWeight.w700,
-                      color: seleccionado ? Colors.white : AppColors.ink,
+                      color:
+                          isSelected ? Colors.white : AppColors.tx,
                     ),
                   ),
                 ],
@@ -397,126 +443,164 @@ class _SelectorFecha extends StatelessWidget {
   }
 }
 
-class _SelectorDuracion extends StatelessWidget {
-  final int duracion;
-  final void Function(int) onChanged;
-
-  const _SelectorDuracion(
-      {required this.duracion, required this.onChanged});
+class _AISuggestionBanner extends StatelessWidget {
+  const _AISuggestionBanner();
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [1, 2, 3].map((d) {
-        final sel = duracion == d;
-        return Padding(
-          padding: const EdgeInsets.only(right: 10),
-          child: GestureDetector(
-            onTap: () => onChanged(d),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-              decoration: BoxDecoration(
-                color: sel ? AppColors.green : AppColors.white,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: sel ? AppColors.green : AppColors.line,
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.acc.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(20),
+        border:
+            Border.all(color: AppColors.acc.withValues(alpha: 0.1)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+                color: AppColors.acc,
+                borderRadius: BorderRadius.circular(10)),
+            child: const Icon(Icons.auto_awesome_rounded,
+                size: 16, color: Colors.white),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Sugerencia IA',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.acc,
+                  ),
                 ),
-              ),
-              child: Text(
-                '$d hora${d > 1 ? 's' : ''}',
-                style: GoogleFonts.outfit(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: sel ? Colors.white : AppColors.ink,
+                Text(
+                  'Los horarios con menor demanda tienen precios más bajos.',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 11,
+                    color: AppColors.tx2,
+                    height: 1.3,
+                  ),
                 ),
-              ),
+              ],
             ),
           ),
-        );
-      }).toList(),
+        ],
+      ),
     );
   }
 }
 
-class _GridHoras extends StatelessWidget {
-  final List<String> horas;
-  final Set<String> horasOcupadas;
-  final String? horaSeleccionada;
-  final int duracion;
-  final double precioBase;
-  final void Function(String) onHoraSelected;
+class _TimeSlotsGrid extends StatelessWidget {
+  final List<String> slots;
+  final List<String> ocupadas;
+  final DateTime fecha;
+  final double precio;
+  final String? selectedTime;
+  final ValueChanged<String> onTimeSelected;
 
-  const _GridHoras({
-    required this.horas,
-    required this.horasOcupadas,
-    required this.horaSeleccionada,
-    required this.duracion,
-    required this.precioBase,
-    required this.onHoraSelected,
+  const _TimeSlotsGrid({
+    required this.slots,
+    required this.ocupadas,
+    required this.fecha,
+    required this.precio,
+    required this.selectedTime,
+    required this.onTimeSelected,
   });
+
+  bool _esPasado(String slot) {
+    final now = DateTime.now();
+    final hoy = DateTime(now.year, now.month, now.day);
+    final dia = DateTime(fecha.year, fecha.month, fecha.day);
+    if (dia.isAfter(hoy)) return false;
+    final hora = int.parse(slot.split(':')[0]);
+    return hora <= now.hour;
+  }
 
   @override
   Widget build(BuildContext context) {
+    if (slots.isEmpty) {
+      return Center(
+        child: Text('Sin horarios disponibles',
+            style: GoogleFonts.plusJakartaSans(color: AppColors.tx3)),
+      );
+    }
+
     return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: horas.map((hora) {
-        final ocupada = horasOcupadas.contains(hora);
-        final seleccionada = hora == horaSeleccionada;
+      spacing: 10,
+      runSpacing: 10,
+      children: slots.map((slot) {
+        final isOcupado = ocupadas.contains(slot);
+        final isPasado = _esPasado(slot);
+        final isDisponible = !isOcupado && !isPasado;
+        final isSelected = selectedTime == slot;
 
-        Color bgColor = AppColors.white;
-        Color borderColor = AppColors.line;
-        Color textColor = AppColors.ink;
+        Color bgColor;
+        Color borderColor;
+        Color textColor;
+        Color subColor;
 
-        if (ocupada) {
-          bgColor = AppColors.line.withValues(alpha: 0.6);
-          textColor = AppColors.ink.withValues(alpha: 0.3);
-        } else if (seleccionada) {
-          bgColor = AppColors.green;
-          borderColor = AppColors.green;
+        if (isSelected) {
+          bgColor = AppColors.tx;
+          borderColor = AppColors.tx;
           textColor = Colors.white;
+          subColor = Colors.white.withValues(alpha: 0.5);
+        } else if (isOcupado) {
+          bgColor = AppColors.red.withValues(alpha: 0.06);
+          borderColor = AppColors.red.withValues(alpha: 0.2);
+          textColor = AppColors.tx3;
+          subColor = AppColors.red.withValues(alpha: 0.7);
+        } else if (isPasado) {
+          bgColor = AppColors.sur;
+          borderColor = AppColors.bdr;
+          textColor = AppColors.tx3;
+          subColor = AppColors.tx3;
+        } else {
+          bgColor = AppColors.sur;
+          borderColor = AppColors.bdr2;
+          textColor = AppColors.tx;
+          subColor = AppColors.acc;
         }
 
         return GestureDetector(
-          onTap: ocupada ? null : () => onHoraSelected(hora),
+          onTap: isDisponible ? () => onTimeSelected(slot) : null,
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 200),
-            padding:
-                const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            width: (MediaQuery.of(context).size.width - 50) / 3,
+            padding: const EdgeInsets.symmetric(vertical: 14),
             decoration: BoxDecoration(
               color: bgColor,
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(14),
               border: Border.all(color: borderColor),
             ),
             child: Column(
               children: [
                 Text(
-                  hora,
-                  style: GoogleFonts.outfit(
-                    fontSize: 13,
+                  slot,
+                  style: GoogleFonts.bricolageGrotesque(
+                    fontSize: 15,
                     fontWeight: FontWeight.w600,
                     color: textColor,
                   ),
                 ),
-                if (!ocupada)
-                  Text(
-                    'S/${(precioBase * duracion).toStringAsFixed(0)}',
-                    style: GoogleFonts.outfit(
-                      fontSize: 10,
-                      color: seleccionada
-                          ? Colors.white.withValues(alpha: 0.8)
-                          : AppColors.green,
-                    ),
+                const SizedBox(height: 4),
+                Text(
+                  isOcupado
+                      ? 'Ocupado'
+                      : isPasado
+                          ? 'Pasado'
+                          : 'S/${precio.toStringAsFixed(0)}',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                    color: subColor,
                   ),
-                if (ocupada)
-                  Text(
-                    'Ocupada',
-                    style: GoogleFonts.outfit(
-                      fontSize: 10,
-                      color: AppColors.ink.withValues(alpha: 0.3),
-                    ),
-                  ),
+                ),
               ],
             ),
           ),
@@ -526,140 +610,210 @@ class _GridHoras extends StatelessWidget {
   }
 }
 
-class _SelectorPago extends StatelessWidget {
-  final String seleccionado;
-  final void Function(String) onChanged;
-
-  const _SelectorPago(
-      {required this.seleccionado, required this.onChanged});
-
-  @override
-  Widget build(BuildContext context) {
-    final metodos = [
-      ('yape', '💜', 'Yape'),
-      ('plin', '💙', 'Plin'),
-      ('tarjeta', '💳', 'Tarjeta'),
-      ('efectivo', '💵', 'Efectivo'),
-    ];
-
-    return Row(
-      children: metodos.map((m) {
-        final (id, emoji, nombre) = m;
-        final sel = seleccionado == id;
-        return Expanded(
-          child: GestureDetector(
-            onTap: () => onChanged(id),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              margin: const EdgeInsets.only(right: 8),
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              decoration: BoxDecoration(
-                color: sel ? AppColors.greenLight : AppColors.white,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: sel ? AppColors.green : AppColors.line,
-                  width: sel ? 1.5 : 1,
-                ),
-              ),
-              child: Column(
-                children: [
-                  Text(emoji, style: const TextStyle(fontSize: 18)),
-                  const SizedBox(height: 4),
-                  Text(
-                    nombre,
-                    style: GoogleFonts.outfit(
-                      fontSize: 11,
-                      fontWeight: sel ? FontWeight.w600 : FontWeight.w400,
-                      color: sel ? AppColors.green : AppColors.ink,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      }).toList(),
-    );
-  }
-}
-
-class _BarraConfirmar extends StatelessWidget {
-  final String? horaSeleccionada;
-  final int duracion;
+class _BookingSummary extends StatelessWidget {
+  final String? selectedTime;
   final double precio;
-  final VoidCallback? onConfirmar;
+  final String metodoPago;
+  final VoidCallback onMetodoPagoTap;
+  final bool isLoading;
+  final VoidCallback onConfirm;
 
-  const _BarraConfirmar({
-    required this.horaSeleccionada,
-    required this.duracion,
+  const _BookingSummary({
+    required this.selectedTime,
     required this.precio,
-    required this.onConfirmar,
+    required this.metodoPago,
+    required this.onMetodoPagoTap,
+    required this.isLoading,
+    required this.onConfirm,
   });
+
+  String get _pagoLabel {
+    const m = {
+      'yape': '💜 Yape',
+      'plin': '💙 Plin',
+      'efectivo': '💵 Efectivo',
+      'tarjeta': '💳 Tarjeta',
+    };
+    return m[metodoPago] ?? metodoPago;
+  }
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: EdgeInsets.fromLTRB(
-          16, 16, 16, MediaQuery.of(context).padding.bottom + 16),
+          24, 20, 24, MediaQuery.of(context).padding.bottom + 20),
       decoration: BoxDecoration(
-        color: AppColors.white,
-        border: const Border(top: BorderSide(color: AppColors.line)),
+        color: AppColors.sur,
+        border: Border(top: BorderSide(color: AppColors.bdr)),
         boxShadow: [
           BoxShadow(
-            color: AppColors.ink.withValues(alpha: 0.06),
-            blurRadius: 20,
-            offset: const Offset(0, -4),
-          ),
+              color: Colors.black.withValues(alpha: 0.05),
+              blurRadius: 20,
+              offset: const Offset(0, -5)),
         ],
       ),
-      child: Row(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          if (horaSeleccionada != null) ...[
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+          if (selectedTime != null) ...[
+            GestureDetector(
+              onTap: onMetodoPagoTap,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 14, vertical: 10),
+                margin: const EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(
+                  color: AppColors.bg,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.bdr2),
+                ),
+                child: Row(
+                  children: [
+                    Text('Pagar con',
+                        style: GoogleFonts.plusJakartaSans(
+                            fontSize: 12, color: AppColors.tx3)),
+                    const Spacer(),
+                    Text(_pagoLabel,
+                        style: GoogleFonts.plusJakartaSans(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.tx)),
+                    const SizedBox(width: 6),
+                    const Icon(Icons.keyboard_arrow_down_rounded,
+                        size: 16, color: AppColors.tx3),
+                  ],
+                ),
+              ),
+            ),
+          ],
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Column(
                 mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  Text('Total a pagar',
+                      style: GoogleFonts.plusJakartaSans(
+                          fontSize: 11, color: AppColors.tx3)),
                   Text(
-                    horaSeleccionada!,
-                    style: GoogleFonts.outfit(
-                      fontSize: 12,
-                      color: AppColors.ink.withValues(alpha: 0.5),
-                    ),
-                  ),
-                  Text(
-                    PrecioUtils.formatear(precio),
+                    selectedTime != null
+                        ? 'S/ ${precio.toStringAsFixed(2)}'
+                        : '—',
                     style: GoogleFonts.bricolageGrotesque(
                       fontSize: 22,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.green,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.tx,
                     ),
                   ),
                 ],
               ),
-            ),
-          ],
-          Expanded(
-            flex: horaSeleccionada != null ? 2 : 1,
-            child: ElevatedButton(
-              onPressed: onConfirmar,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: onConfirmar != null
-                    ? AppColors.green
-                    : AppColors.line,
-              ),
-              child: Text(
-                onConfirmar != null
-                    ? 'Confirmar reserva'
-                    : 'Selecciona una hora',
-                style: GoogleFonts.outfit(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white,
+              ElevatedButton(
+                onPressed: (selectedTime != null && !isLoading)
+                    ? onConfirm
+                    : null,
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 28, vertical: 16),
+                  minimumSize: Size.zero,
                 ),
+                child: isLoading
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                            color: Colors.white, strokeWidth: 2),
+                      )
+                    : const Text('Confirmar Reserva'),
               ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MetodoPagoSheet extends StatelessWidget {
+  final String seleccionado;
+  final ValueChanged<String> onSeleccionado;
+
+  const _MetodoPagoSheet(
+      {required this.seleccionado, required this.onSeleccionado});
+
+  @override
+  Widget build(BuildContext context) {
+    const metodos = [
+      ('yape', '💜', 'Yape'),
+      ('plin', '💙', 'Plin'),
+      ('efectivo', '💵', 'Efectivo'),
+      ('tarjeta', '💳', 'Tarjeta'),
+    ];
+
+    return Container(
+      margin: const EdgeInsets.all(12),
+      padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
+      decoration: BoxDecoration(
+        color: AppColors.sur,
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Método de pago',
+            style: GoogleFonts.bricolageGrotesque(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              color: AppColors.tx,
             ),
           ),
+          const SizedBox(height: 16),
+          ...metodos.map((m) {
+            final (id, emoji, label) = m;
+            final isSel = seleccionado == id;
+            return GestureDetector(
+              onTap: () => onSeleccionado(id),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                margin: const EdgeInsets.only(bottom: 10),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 16, vertical: 14),
+                decoration: BoxDecoration(
+                  color: isSel ? AppColors.accLight : AppColors.bg,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: isSel ? AppColors.acc : AppColors.bdr2,
+                    width: isSel ? 1.5 : 1,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Text(emoji,
+                        style: const TextStyle(fontSize: 20)),
+                    const SizedBox(width: 14),
+                    Text(
+                      label,
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 15,
+                        fontWeight: isSel
+                            ? FontWeight.w600
+                            : FontWeight.w400,
+                        color:
+                            isSel ? AppColors.acc : AppColors.tx,
+                      ),
+                    ),
+                    if (isSel) ...[
+                      const Spacer(),
+                      const Icon(Icons.check_circle_rounded,
+                          color: AppColors.acc, size: 20),
+                    ],
+                  ],
+                ),
+              ),
+            );
+          }),
         ],
       ),
     );

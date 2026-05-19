@@ -1,6 +1,6 @@
 // providers/location_provider.dart
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:latlong2/latlong.dart';
 
 import '../core/services/location_service.dart';
 
@@ -17,4 +17,9 @@ final ubicacionStreamProvider = StreamProvider<LatLng>((ref) {
 /// Si el usuario concedió permiso de ubicación.
 final tienePermisoUbicacionProvider = FutureProvider<bool>((ref) async {
   return await LocationService.instance.tienePermiso();
+});
+
+/// Obtiene la dirección (texto) a partir de coordenadas.
+final direccionProvider = FutureProvider.family<String, LatLng>((ref, pos) async {
+  return await LocationService.instance.obtenerDireccion(pos);
 });

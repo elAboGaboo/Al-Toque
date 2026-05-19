@@ -18,7 +18,7 @@ class AdminPartidosScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final complejoId =
-        ref.watch(complejoIdAdminProvider) ?? 'demo_complejo';
+        ref.watch(complejoIdProvider) ?? 'demo_complejo';
     final partidosAsync =
         ref.watch(partidosComplejoProvider(complejoId));
 
@@ -211,3 +211,4 @@ class _PartidoAdminCard extends StatelessWidget {
     );
   }
 }
+

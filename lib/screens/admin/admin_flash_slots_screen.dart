@@ -18,7 +18,7 @@ class AdminFlashSlotsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final complejoId =
-        ref.watch(complejoIdAdminProvider) ?? 'demo_complejo';
+        ref.watch(complejoIdProvider) ?? 'demo_complejo';
     final slotsAsync =
         ref.watch(flashSlotsComplejoProvider(complejoId));
     return Scaffold(
@@ -384,3 +384,4 @@ class _CrearFlashSlotSheetState extends State<_CrearFlashSlotSheet> {
     if (mounted) Navigator.pop(context);
   }
 }
+

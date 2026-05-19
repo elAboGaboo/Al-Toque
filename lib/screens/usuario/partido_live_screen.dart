@@ -71,10 +71,10 @@ class PartidoLiveScreen extends ConsumerWidget {
                   const Icon(Icons.share_rounded, color: Colors.white),
               onPressed: () {
                 final link = DeepLinkService.generarLinkPartido(partidoId);
-                Share.share(
-                  '¡Únete a mi partido de ${partido.deporteLabel} en Huancayo!\n'
+                SharePlus.instance.share(
+                  ShareParams(text: '¡Únete a mi partido de ${partido.deporteLabel} en Huancayo!\n'
                   '${AppDateUtils.fechaRelativa(partido.fecha)} · ${partido.horaInicio}\n'
-                  'Quedan $puestos puestos\n$link',
+                  'Quedan $puestos puestos\n$link'),
                 );
               },
             ),

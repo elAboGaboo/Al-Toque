@@ -4,11 +4,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../core/constants/app_constants.dart';
 import '../../core/theme/app_colors.dart';
 import '../../providers/auth_provider.dart';
 
 class RegistroScreen extends ConsumerStatefulWidget {
-  final String rolInicial; // 'jugador' | 'admin'
+  final String rolInicial; // 'jugador' | 'dueno'
   const RegistroScreen({super.key, this.rolInicial = 'jugador'});
 
   @override
@@ -21,9 +22,12 @@ class _RegistroScreenState extends ConsumerState<RegistroScreen> {
   final _emailCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
   final _confirmCtrl = TextEditingController();
+  final _codigoCtrl = TextEditingController();
   bool _obscure = true;
   bool _obscureConfirm = true;
   bool _loading = false;
+
+  bool get _esDueno => widget.rolInicial == 'dueno';
 
   @override
   void dispose() {
@@ -31,11 +35,22 @@ class _RegistroScreenState extends ConsumerState<RegistroScreen> {
     _emailCtrl.dispose();
     _passCtrl.dispose();
     _confirmCtrl.dispose();
+    _codigoCtrl.dispose();
     super.dispose();
   }
 
   Future<void> _registrar() async {
     if (!_formKey.currentState!.validate()) return;
+    if (_esDueno &&
+        _codigoCtrl.text.trim() != AppConstants.codigoRegistroDueno) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Código de acceso incorrecto',
+            style: GoogleFonts.outfit()),
+        backgroundColor: AppColors.errorRed,
+        duration: const Duration(seconds: 4),
+      ));
+      return;
+    }
     setState(() => _loading = true);
 
     await ref.read(authNotifierProvider.notifier).registrar(
@@ -86,8 +101,16 @@ class _RegistroScreenState extends ConsumerState<RegistroScreen> {
           ),
         );
         setState(() => _loading = false);
+      } else {
+        // Navegar explícitamente — no depender del redirect de GoRouter
+        // porque hay una ventana de tiempo donde el doc de Firestore aún
+        // no llegó al stream y el router envía de vuelta a /welcome.
+        if (_esDueno) {
+          context.go('/admin/setup-complejo');
+        } else {
+          context.go('/inicio');
+        }
       }
-      // GoRouter maneja la navegación cuando authState cambia
     }
   }
 
@@ -113,7 +136,7 @@ class _RegistroScreenState extends ConsumerState<RegistroScreen> {
               children: [
                 const SizedBox(height: 16),
                 Text(
-                  'Crear tu\ncuenta',
+                  _esDueno ? 'Registra tu\ncomplejo' : 'Crear tu\ncuenta',
                   style: GoogleFonts.bricolageGrotesque(
                     fontSize: 36,
                     fontWeight: FontWeight.w800,
@@ -123,7 +146,9 @@ class _RegistroScreenState extends ConsumerState<RegistroScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Únete a miles de jugadores en Huancayo',
+                  _esDueno
+                      ? 'Gestiona tu complejo deportivo en Al Toque'
+                      : 'Únete a miles de jugadores en Huancayo',
                   style: GoogleFonts.outfit(
                     fontSize: 15,
                     color: AppColors.ink.withValues(alpha: 0.5),
@@ -237,6 +262,30 @@ class _RegistroScreenState extends ConsumerState<RegistroScreen> {
                     return null;
                   },
                 ),
+                // Código secreto — solo para dueños de complejo
+                if (_esDueno) ...[
+                  const SizedBox(height: 14),
+                  TextFormField(
+                    controller: _codigoCtrl,
+                    textInputAction: TextInputAction.done,
+                    onFieldSubmitted: (_) => _registrar(),
+                    decoration: InputDecoration(
+                      labelText: 'Código de acceso',
+                      hintText: 'Proporcionado por Al Toque',
+                      labelStyle: GoogleFonts.outfit(
+                          color: AppColors.ink.withValues(alpha: 0.5)),
+                      prefixIcon: const Icon(Icons.vpn_key_outlined,
+                          color: AppColors.green, size: 20),
+                    ),
+                    validator: (v) {
+                      if (_esDueno && (v == null || v.trim().isEmpty)) {
+                        return 'Ingresa el código de acceso';
+                      }
+                      return null;
+                    },
+                  ),
+                ],
+
                 const SizedBox(height: 28),
 
                 // Términos

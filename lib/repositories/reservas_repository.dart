@@ -8,25 +8,27 @@ class ReservasRepository {
   final _db = FirebaseFirestore.instance;
 
   /// Stream de reservas del día seleccionado para una cancha (tiempo real).
+  /// Filtra por complejoId en Firestore, resto en cliente.
   Stream<List<ReservaModel>> streamReservasDelDia({
     required String complejoId,
     required String canchaId,
     required DateTime fecha,
   }) {
-    final inicio = Timestamp.fromDate(
-        DateTime(fecha.year, fecha.month, fecha.day));
-    final fin = Timestamp.fromDate(
-        DateTime(fecha.year, fecha.month, fecha.day, 23, 59, 59));
+    final inicio = DateTime(fecha.year, fecha.month, fecha.day);
+    final fin = DateTime(fecha.year, fecha.month, fecha.day, 23, 59, 59);
 
     return _db
         .collection(FirestorePaths.reservas)
         .where('complejoId', isEqualTo: complejoId)
-        .where('canchaId', isEqualTo: canchaId)
-        .where('fecha', isGreaterThanOrEqualTo: inicio)
-        .where('fecha', isLessThanOrEqualTo: fin)
-        .where('estado', whereIn: ['confirmada', 'pendiente'])
         .snapshots()
-        .map((s) => s.docs.map(ReservaModel.fromFirestore).toList());
+        .map((s) => s.docs
+            .map(ReservaModel.fromFirestore)
+            .where((r) =>
+                r.canchaId == canchaId &&
+                !r.fecha.isBefore(inicio) &&
+                !r.fecha.isAfter(fin) &&
+                (r.estaConfirmada || r.estaPendiente))
+            .toList());
   }
 
   /// Stream de reservas de un usuario.
@@ -50,22 +52,24 @@ class ReservasRepository {
   }
 
   /// Reservas del complejo para una fecha específica (admin).
+  /// Filtra por complejoId en Firestore y por fecha en cliente
+  /// para evitar requerir índices compuestos.
   Stream<List<ReservaModel>> streamReservasComplejoFecha({
     required String complejoId,
     required DateTime fecha,
   }) {
-    final inicio = Timestamp.fromDate(
-        DateTime(fecha.year, fecha.month, fecha.day));
-    final fin = Timestamp.fromDate(
-        DateTime(fecha.year, fecha.month, fecha.day, 23, 59, 59));
+    final inicio = DateTime(fecha.year, fecha.month, fecha.day);
+    final fin = DateTime(fecha.year, fecha.month, fecha.day, 23, 59, 59);
 
     return _db
         .collection(FirestorePaths.reservas)
         .where('complejoId', isEqualTo: complejoId)
-        .where('fecha', isGreaterThanOrEqualTo: inicio)
-        .where('fecha', isLessThanOrEqualTo: fin)
         .snapshots()
-        .map((s) => s.docs.map(ReservaModel.fromFirestore).toList());
+        .map((s) => s.docs
+            .map(ReservaModel.fromFirestore)
+            .where((r) =>
+                !r.fecha.isBefore(inicio) && !r.fecha.isAfter(fin))
+            .toList());
   }
 
   /// Crea una reserva nueva. Retorna el ID de la reserva.
@@ -102,10 +106,47 @@ class ReservasRepository {
     });
   }
 
-  /// Confirma una reserva (estado → confirmada).
+  /// Confirma una reserva — usado tanto en modo instantáneo como por el dueño.
   Future<void> confirmarReserva(String reservaId) async {
     await _db.doc(FirestorePaths.reservaDoc(reservaId)).update({
       'estado': 'confirmada',
+    });
+  }
+
+  /// El dueño rechaza una solicitud de reserva → estado cancelada + pago devuelto.
+  Future<void> rechazarReserva(String reservaId) async {
+    await _db.doc(FirestorePaths.reservaDoc(reservaId)).update({
+      'estado': 'cancelada',
+      'estadoPago': 'devuelto',
+    });
+  }
+
+  /// Libera el pago al dueño tras confirmar que la sesión se realizó.
+  Future<void> liberarPago(String reservaId) async {
+    await _db.doc(FirestorePaths.reservaDoc(reservaId)).update({
+      'estadoPago': 'liberado',
+    });
+  }
+
+  /// El jugador califica al complejo tras la sesión.
+  Future<void> calificarComplejo({
+    required String reservaId,
+    required double calificacion,
+    String comentario = '',
+  }) async {
+    await _db.doc(FirestorePaths.reservaDoc(reservaId)).update({
+      'calificacionAlComplejo': calificacion,
+      'comentarioUsuario': comentario,
+    });
+  }
+
+  /// El dueño califica al jugador tras la sesión.
+  Future<void> calificarJugador({
+    required String reservaId,
+    required double calificacion,
+  }) async {
+    await _db.doc(FirestorePaths.reservaDoc(reservaId)).update({
+      'calificacionAlJugador': calificacion,
     });
   }
 }

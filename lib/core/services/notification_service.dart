@@ -5,7 +5,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 // Canal HIGH PRIORITY: partidos completados, flash slots urgentes
 const AndroidNotificationChannel _channelHigh = AndroidNotificationChannel(
   'canchapp_high',
-  'CanchApp — Urgente',
+  'Al Toque — Urgente',
   description: 'Partido completado, Flash Slots y alertas inmediatas',
   importance: Importance.max,
   playSound: true,
@@ -15,7 +15,7 @@ const AndroidNotificationChannel _channelHigh = AndroidNotificationChannel(
 // Canal NORMAL: confirmaciones y recordatorios
 const AndroidNotificationChannel _channelNormal = AndroidNotificationChannel(
   'canchapp_channel',
-  'CanchApp Notificaciones',
+  'Al Toque Notificaciones',
   description: 'Reservas, Flash Slots y Partidos',
   importance: Importance.high,
   playSound: true,
@@ -43,7 +43,7 @@ class NotificationService {
     const initSettings = InitializationSettings(android: androidInit);
 
     await _localNotif.initialize(
-      initSettings,
+      settings: initSettings,
       onDidReceiveNotificationResponse: (NotificationResponse response) {
         final payload = response.payload;
         if (payload != null && onNavigate != null) {
@@ -95,10 +95,10 @@ class NotificationService {
         message.data['tipo'] == 'flash_slot';
 
     _localNotif.show(
-      notif.hashCode,
-      notif.title,
-      notif.body,
-      NotificationDetails(
+      id: notif.hashCode,
+      title: notif.title,
+      body: notif.body,
+      notificationDetails: NotificationDetails(
         android: AndroidNotificationDetails(
           isUrgente ? _channelHigh.id : _channelNormal.id,
           isUrgente ? _channelHigh.name : _channelNormal.name,
@@ -127,10 +127,10 @@ class NotificationService {
     bool urgente = false,
   }) async {
     await _localNotif.show(
-      DateTime.now().millisecondsSinceEpoch & 0x7FFFFFFF,
-      titulo,
-      cuerpo,
-      NotificationDetails(
+      id: DateTime.now().millisecondsSinceEpoch & 0x7FFFFFFF,
+      title: titulo,
+      body: cuerpo,
+      notificationDetails: NotificationDetails(
         android: AndroidNotificationDetails(
           urgente ? _channelHigh.id : _channelNormal.id,
           urgente ? _channelHigh.name : _channelNormal.name,

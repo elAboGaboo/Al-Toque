@@ -1,22 +1,21 @@
+// screens/mapa/mapa_screen.dart
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:latlong2/latlong.dart';
 
+import '../../core/services/directions_service.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/utils/geo_utils.dart';
 import '../../models/complejo_model.dart';
-import '../../models/flash_slot_model.dart';
-import '../../providers/map_provider.dart';
-import 'widgets/cancha_card_horizontal.dart';
-import 'widgets/demand_chip.dart';
+import '../../providers/complejos_provider.dart';
 import 'widgets/filter_bar.dart';
 import 'widgets/map_marker_painter.dart';
-
-// Coordenadas centro de Huancayo
-const _huancayo = LatLng(-12.0651, -75.2049);
 
 class MapaScreen extends ConsumerStatefulWidget {
   const MapaScreen({super.key});
@@ -25,841 +24,808 @@ class MapaScreen extends ConsumerStatefulWidget {
   ConsumerState<MapaScreen> createState() => _MapaScreenState();
 }
 
-class _MapaScreenState extends ConsumerState<MapaScreen>
-    with TickerProviderStateMixin {
-  GoogleMapController? _mapController;
-  final DraggableScrollableController _sheetController =
-      DraggableScrollableController();
+class _MapaScreenState extends ConsumerState<MapaScreen> {
+  final _mapController = MapController();
 
-  // Marcadores
-  final Map<String, Marker> _markers = {};
+  // Posición real del usuario — arranca en Huancayo y se actualiza con GPS
+  LatLng _userPos = const LatLng(-12.0651, -75.2049);
+  bool _locationLoading = true;
+  StreamSubscription<Position>? _posSub;
 
-  // Animación flash pulse
-  late AnimationController _pulseController;
-  Timer? _markerRefreshTimer;
-
-  // Última posición conocida del usuario
-  LatLng? _userPos;
+  ComplejoModel? _selectedComplejo;
+  List<LatLng> _polylinePoints = [];
+  bool _loadingRoute = false;
 
   @override
   void initState() {
     super.initState();
-    _pulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 900),
-    )..repeat(reverse: true);
-
-    // Refresca los markers flash cada 30 s para actualizar countdown
-    _markerRefreshTimer =
-        Timer.periodic(const Duration(seconds: 30), (_) => _rebuildMarkers());
+    _initLocation();
   }
 
   @override
   void dispose() {
-    _pulseController.dispose();
-    _markerRefreshTimer?.cancel();
-    _mapController?.dispose();
-    _sheetController.dispose();
+    _posSub?.cancel();
+    _mapController.dispose();
     super.dispose();
   }
 
-  // ── Construcción de marcadores ─────────────────────────────
+  // ── GPS ──────────────────────────────────────────────────────────────────────
 
-  Future<void> _rebuildMarkers() async {
+  Future<void> _initLocation() async {
+    var perm = await Geolocator.checkPermission();
+    if (perm == LocationPermission.denied) {
+      perm = await Geolocator.requestPermission();
+    }
+
     if (!mounted) return;
-    final pos = _userPos ?? _huancayo;
-    final filter = ref.read(mapFilterProvider);
 
-    final complejosAsync =
-        ref.read(complejosCercanosProvider(pos));
-    final flashAsync = ref.read(flashSlotsActivosProvider);
-    final partidosAsync = ref.read(partidosAbiertosProvider);
+    if (perm == LocationPermission.deniedForever ||
+        perm == LocationPermission.denied) {
+      setState(() => _locationLoading = false);
+      return;
+    }
 
-    final complejos = complejosAsync.valueOrNull ?? [];
-    final flashSlots = flashAsync.valueOrNull ?? [];
-    final partidos = partidosAsync.valueOrNull ?? [];
+    final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      if (mounted) setState(() => _locationLoading = false);
+      return;
+    }
 
-    final newMarkers = <String, Marker>{};
+    // Primera posición (rápida)
+    try {
+      final pos = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+        ),
+      ).timeout(const Duration(seconds: 15));
 
-    // Pin usuario
-    newMarkers['me'] = Marker(
-      markerId: const MarkerId('me'),
-      position: pos,
-      icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
-      zIndexInt: 10,
-    );
+      if (!mounted) return;
 
-    // Filtra según filtro activo
-    final showNormal =
-        filter == MapFilter.todos || filter == MapFilter.disponibles;
-    final showFlash =
-        filter == MapFilter.todos || filter == MapFilter.flash;
-    final showPartidos =
-        filter == MapFilter.todos || filter == MapFilter.partidos;
+      final latlng = LatLng(pos.latitude, pos.longitude);
+      setState(() {
+        _userPos = latlng;
+        _locationLoading = false;
+      });
+      // Centrar mapa en la posición real obtenida
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _mapController.move(_userPos, 15),
+      );
+    } catch (_) {
+      if (mounted) setState(() => _locationLoading = false);
+    }
 
-    // Pins complejos normales
-    if (showNormal) {
-      for (final c in complejos) {
-        // Si hay flash slot activo en este complejo → no mostrar como normal
-        final tieneFlash =
-            flashSlots.any((f) => f.complejoId == c.id && f.isActivo);
-        if (tieneFlash && filter != MapFilter.disponibles) continue;
-
-        final icon = await MapMarkerPainter.pinNormal(
-          precio: '40',
-          nombre: c.nombre,
-        );
-        newMarkers[c.id] = Marker(
-          markerId: MarkerId(c.id),
-          position: LatLng(c.lat, c.lng),
-          icon: icon,
-          onTap: () => _onComplejoTap(c),
-          zIndexInt: 1,
-        );
+    // Stream de actualizaciones en tiempo real
+    _posSub = Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 15, // cada 15 metros
+      ),
+    ).listen((pos) {
+      if (mounted) {
+        setState(() => _userPos = LatLng(pos.latitude, pos.longitude));
       }
-    }
-
-    // Pins flash
-    if (showFlash) {
-      for (final slot in flashSlots) {
-        final c =
-            complejos.where((x) => x.id == slot.complejoId).firstOrNull;
-        if (c == null) continue;
-
-        final icon = await MapMarkerPainter.pinFlash(
-          precio: slot.precioFlash.toStringAsFixed(0),
-          countdown: slot.tiempoRestanteLabel,
-        );
-        newMarkers['flash_${slot.id}'] = Marker(
-          markerId: MarkerId('flash_${slot.id}'),
-          position: LatLng(c.lat, c.lng),
-          icon: icon,
-          onTap: () => _onFlashTap(slot, c),
-          zIndexInt: 3,
-        );
-      }
-    }
-
-    // Pins partidos
-    if (showPartidos) {
-      for (final partido in partidos) {
-        final c =
-            complejos.where((x) => x.id == partido.complejoId).firstOrNull;
-        if (c == null) continue;
-
-        final icon = await MapMarkerPainter.pinPartido(
-          deporte: partido.deporteEmoji,
-          hora: partido.horaInicio,
-          progreso:
-              '${partido.jugadoresActuales}/${partido.jugadoresNecesarios}',
-        );
-        newMarkers['partido_${partido.id}'] = Marker(
-          markerId: MarkerId('partido_${partido.id}'),
-          position: LatLng(c.lat, c.lng),
-          icon: icon,
-          onTap: () => context.push('/partido/${partido.id}'),
-          zIndexInt: 2,
-        );
-      }
-    }
-
-    if (mounted) {
-      setState(() => _markers
-        ..clear()
-        ..addAll(newMarkers));
-    }
+    });
   }
 
-  // ── Handlers de tap ────────────────────────────────────────
+  // ── Acciones ─────────────────────────────────────────────────────────────────
 
-  void _onComplejoTap(ComplejoModel complejo) {
-    ref.read(complejoSeleccionadoProvider.notifier).state = complejo;
-    _sheetController.animateTo(
-      0.55,
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeOutCubic,
+  Future<void> _onComplejoTap(ComplejoModel complejo) async {
+    final destination = LatLng(complejo.lat, complejo.lng);
+
+    setState(() {
+      _selectedComplejo = complejo;
+      _polylinePoints = [];
+      _loadingRoute = true;
+    });
+
+    _mapController.move(destination, 15.5);
+
+    final puntos = await DirectionsService.getRoute(
+      origin: _userPos,
+      destination: destination,
     );
-  }
 
-  void _onFlashTap(FlashSlotModel slot, ComplejoModel complejo) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _FlashSlotSheet(slot: slot, complejo: complejo),
-    );
-  }
+    if (!mounted) return;
 
-  void _recenter() {
-    if (_userPos != null && _mapController != null) {
-      _mapController!.animateCamera(
-        CameraUpdate.newCameraPosition(
-          CameraPosition(target: _userPos!, zoom: 15),
+    setState(() {
+      _polylinePoints = puntos ?? [];
+      _loadingRoute = false;
+    });
+
+    if (puntos == null && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'No se encontró ruta hacia ${complejo.nombre}',
+            style: GoogleFonts.outfit(fontSize: 13),
+          ),
+          backgroundColor: AppColors.tx,
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 90),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         ),
       );
     }
   }
 
-  // ── Build ──────────────────────────────────────────────────
+  void _irAMiUbicacion() => _mapController.move(_userPos, 16);
+
+  void _limpiarRuta() {
+    setState(() {
+      _selectedComplejo = null;
+      _polylinePoints = [];
+    });
+  }
+
+  // ── Build ─────────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
-    final ubicacionAsync = ref.watch(ubicacionProvider);
+    final complejosAsync = ref.watch(complejosProvider);
 
-    // Cuando cambia la ubicación, actualizar pos y markers
-    ref.listen(ubicacionProvider, (_, next) {
-      next.whenData((pos) {
-        if (pos != null) {
-          _userPos = pos;
-          _rebuildMarkers();
-        }
-      });
-    });
+    if (complejosAsync.hasError) {
+      debugPrint('[MapaScreen] Error cargando complejos: ${complejosAsync.error}');
+    }
 
-    // Cuando cambian los datos (flash, partidos, complejos), reconstruir
-    ref.listen(flashSlotsActivosProvider, (_, _) => _rebuildMarkers());
-    ref.listen(partidosAbiertosProvider, (_, _) => _rebuildMarkers());
-    ref.listen(mapFilterProvider, (_, _) => _rebuildMarkers());
+    final complejos = (complejosAsync.asData?.value ?? [])
+        .where((c) =>
+            GeoUtils.distanciaKm(
+              lat1: _userPos.latitude,
+              lng1: _userPos.longitude,
+              lat2: c.lat,
+              lng2: c.lng,
+            ) <=
+            50)
+        .toList();
 
-    final initialTarget = ubicacionAsync.valueOrNull ?? _huancayo;
+    final markers = <Marker>[
+      // Punto azul del usuario
+      Marker(
+        point: _userPos,
+        width: 22,
+        height: 22,
+        alignment: Alignment.center,
+        child: MapMarkerPainter.pinUsuario(),
+      ),
+      // Pins de complejos
+      for (final c in complejos)
+        Marker(
+          point: LatLng(c.lat, c.lng),
+          width: 120,
+          height: 60,
+          alignment: Alignment.bottomCenter,
+          child: GestureDetector(
+            onTap: () => _onComplejoTap(c),
+            child: MapMarkerPainter.pinNormal(
+              precio: '40',
+              nombre: _selectedComplejo?.id == c.id
+                  ? '✓ ${c.nombre}'
+                  : c.nombre,
+            ),
+          ),
+        ),
+    ];
 
     return Scaffold(
-      body: Stack(
-        children: [
-          // ── Mapa ──────────────────────────────────────────
-          GoogleMap(
-            initialCameraPosition: CameraPosition(
-              target: initialTarget,
-              zoom: 14.5,
+      body: SizedBox.expand(
+        child: Stack(
+          children: [
+            // ── Mapa ─────────────────────────────────────────────
+            FlutterMap(
+              mapController: _mapController,
+              options: MapOptions(
+                initialCenter: _userPos,
+                initialZoom: 14.5,
+                onTap: (_, _) {
+                  if (_selectedComplejo != null) _limpiarRuta();
+                },
+              ),
+              children: [
+                TileLayer(
+                  urlTemplate:
+                      'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+                  subdomains: const ['a', 'b', 'c', 'd'],
+                  userAgentPackageName: 'com.altoque.app',
+                  retinaMode: RetinaMode.isHighDensity(context),
+                  maxZoom: 20,
+                ),
+                if (_polylinePoints.isNotEmpty)
+                  PolylineLayer(
+                    polylines: [
+                      Polyline(
+                        points: _polylinePoints,
+                        color: AppColors.acc,
+                        strokeWidth: 4,
+                      ),
+                    ],
+                  ),
+                MarkerLayer(markers: markers),
+              ],
             ),
-            onMapCreated: (ctrl) {
-              _mapController = ctrl;
-              _rebuildMarkers();
-            },
-            markers: Set<Marker>.of(_markers.values),
-            myLocationEnabled: false,
-            myLocationButtonEnabled: false,
-            zoomControlsEnabled: false,
-            mapToolbarEnabled: false,
-            compassEnabled: false,
-            padding: const EdgeInsets.only(bottom: 180),
-          ),
 
-          // ── Gradiente superior ────────────────────────────
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            height: 160,
-            child: IgnorePointer(
-              child: Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      AppColors.paper.withValues(alpha: 0.95),
-                      AppColors.paper.withValues(alpha: 0),
+            // ── Barra de búsqueda ─────────────────────────────────
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 16,
+              left: 20,
+              right: 20,
+              child: _SearchBar(
+                selectedComplejo: _selectedComplejo,
+                onClearSelection: _limpiarRuta,
+              ),
+            ),
+
+            // ── Filtros ──────────────────────────────────────────
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 80,
+              left: 0,
+              right: 0,
+              child: const MapFilterBar(),
+            ),
+
+            // ── Overlay: buscando ubicación ──────────────────────
+            if (_locationLoading)
+              Positioned(
+                top: MediaQuery.of(context).padding.top + 128,
+                left: 0,
+                right: 0,
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: AppColors.sur,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: AppColors.bdr),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.tx.withValues(alpha: 0.10),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const SizedBox(
+                          width: 12,
+                          height: 12,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: AppColors.acc,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Buscando tu ubicación…',
+                          style: GoogleFonts.outfit(
+                              fontSize: 12, color: AppColors.tx2),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+
+            // ── Overlay: calculando ruta ─────────────────────────
+            if (_loadingRoute)
+              Positioned(
+                top: MediaQuery.of(context).padding.top + 128,
+                left: 0,
+                right: 0,
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: AppColors.acc,
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.acc.withValues(alpha: 0.4),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Calculando ruta…',
+                          style: GoogleFonts.outfit(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+
+            // ── Botón "Mi ubicación" ─────────────────────────────
+            Positioned(
+              bottom: complejos.isNotEmpty ? 242 : 40,
+              right: 20,
+              child: FloatingActionButton.small(
+                heroTag: 'mi_ubicacion',
+                onPressed: _irAMiUbicacion,
+                backgroundColor: AppColors.sur,
+                elevation: 4,
+                child: const Icon(
+                  Icons.my_location_rounded,
+                  color: AppColors.acc,
+                  size: 20,
+                ),
+              ),
+            ),
+
+            // ── Carousel inferior de complejos ───────────────────
+            if (complejos.isNotEmpty)
+              Align(
+                alignment: Alignment.bottomCenter,
+                child: _ComplejoCarousel(
+                  complejos: complejos,
+                  userPos: _userPos,
+                  selectedId: _selectedComplejo?.id,
+                  onTap: _onComplejoTap,
+                ),
+              ),
+
+            // ── Empty state ──────────────────────────────────────
+            if (complejos.isEmpty && !_loadingRoute && !_locationLoading)
+              Positioned(
+                bottom: 40,
+                left: 20,
+                right: 20,
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AppColors.sur,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: AppColors.bdr),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.search_off_rounded,
+                          color: AppColors.tx3, size: 20),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          complejosAsync.hasError
+                              ? 'Error cargando complejos. Verifica tu conexión.'
+                              : 'Aún no hay complejos registrados en Huancayo.',
+                          style: GoogleFonts.outfit(
+                              fontSize: 13, color: AppColors.tx2),
+                        ),
+                      ),
                     ],
                   ),
                 ),
               ),
-            ),
-          ),
-
-          // ── SearchBar ─────────────────────────────────────
-          Positioned(
-            top: MediaQuery.of(context).padding.top + 12,
-            left: 16,
-            right: 16,
-            child: _SearchBar(onTap: () => context.push('/partidos')),
-          ),
-
-          // ── FilterChips ───────────────────────────────────
-          Positioned(
-            top: MediaQuery.of(context).padding.top + 72,
-            left: 0,
-            right: 0,
-            child: const MapFilterBar(),
-          ),
-
-          // ── Demand chip (abajo izquierda) ─────────────────
-          Positioned(
-            bottom: 200,
-            left: 16,
-            child: _DemandChipWrapper(),
-          ),
-
-          // ── Botón recenter ────────────────────────────────
-          Positioned(
-            bottom: 200,
-            right: 16,
-            child: _RecenterButton(onTap: _recenter),
-          ),
-
-          // ── Bottom sheet ──────────────────────────────────
-          DraggableScrollableSheet(
-            controller: _sheetController,
-            initialChildSize: 0.18,
-            minChildSize: 0.12,
-            maxChildSize: 0.85,
-            snap: true,
-            snapSizes: const [0.18, 0.45, 0.85],
-            builder: (context, scrollController) {
-              return _BottomSheetContent(
-                scrollController: scrollController,
-                userPos: _userPos ?? _huancayo,
-                onComplejoTap: _onComplejoTap,
-              );
-            },
-          ),
-
-          // ── FAB Crear partido ─────────────────────────────
-          Positioned(
-            bottom: 16,
-            right: 16,
-            child: _CrearPartidoFab(
-              onTap: () => context.push('/crear-partido'),
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 }
 
-// ── SearchBar ────────────────────────────────────────────────
+// ── Barra de búsqueda / indicador de selección ──────────────────────────────
 
 class _SearchBar extends StatelessWidget {
-  final VoidCallback onTap;
-  const _SearchBar({required this.onTap});
+  final ComplejoModel? selectedComplejo;
+  final VoidCallback onClearSelection;
 
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        height: 48,
-        decoration: BoxDecoration(
-          color: AppColors.white,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: AppColors.line),
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.ink.withValues(alpha: 0.08),
-              blurRadius: 16,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 14),
-        child: Row(
-          children: [
-            Icon(Icons.search_rounded,
-                color: AppColors.ink.withValues(alpha: 0.4), size: 20),
-            const SizedBox(width: 10),
-            Text(
-              'Buscar canchas en Huancayo…',
-              style: GoogleFonts.outfit(
-                fontSize: 14,
-                color: AppColors.ink.withValues(alpha: 0.45),
-              ),
-            ),
-            const Spacer(),
-            Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(
-                color: AppColors.greenLight,
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Text(
-                'Buscar',
-                style: GoogleFonts.outfit(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.green,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ── Recenter button ──────────────────────────────────────────
-
-class _RecenterButton extends StatelessWidget {
-  final VoidCallback onTap;
-  const _RecenterButton({required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: AppColors.white,
-      borderRadius: BorderRadius.circular(12),
-      elevation: 4,
-      shadowColor: AppColors.ink.withValues(alpha: 0.15),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          padding: const EdgeInsets.all(10),
-          child: const Icon(Icons.my_location_rounded,
-              color: AppColors.green, size: 22),
-        ),
-      ),
-    );
-  }
-}
-
-// ── Demand chip wrapper ──────────────────────────────────────
-
-class _DemandChipWrapper extends ConsumerWidget {
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final pos = ref.watch(ubicacionProvider).valueOrNull;
-    if (pos == null) return const SizedBox.shrink();
-
-    final complejos =
-        ref.watch(complejosCercanosProvider(pos)).valueOrNull ?? [];
-    if (complejos.isEmpty) return const SizedBox.shrink();
-
-    final prediccionAsync =
-        ref.watch(prediccionCercanosProvider(complejos.first.id));
-
-    return prediccionAsync.when(
-      data: (pred) =>
-          pred != null ? DemandChip(prediccion: pred) : const SizedBox.shrink(),
-      loading: () => const SizedBox.shrink(),
-      error: (_, _) => const SizedBox.shrink(),
-    );
-  }
-}
-
-// ── FAB Crear partido ────────────────────────────────────────
-
-class _CrearPartidoFab extends StatelessWidget {
-  final VoidCallback onTap;
-  const _CrearPartidoFab({required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-        decoration: BoxDecoration(
-          color: AppColors.party,
-          borderRadius: BorderRadius.circular(14),
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.party.withValues(alpha: 0.4),
-              blurRadius: 16,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.group_add_rounded,
-                color: Colors.white, size: 20),
-            const SizedBox(width: 8),
-            Text(
-              'Crear partido',
-              style: GoogleFonts.outfit(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: Colors.white,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ── Bottom sheet content ─────────────────────────────────────
-
-class _BottomSheetContent extends ConsumerWidget {
-  final ScrollController scrollController;
-  final LatLng userPos;
-  final void Function(ComplejoModel) onComplejoTap;
-
-  const _BottomSheetContent({
-    required this.scrollController,
-    required this.userPos,
-    required this.onComplejoTap,
+  const _SearchBar({
+    required this.selectedComplejo,
+    required this.onClearSelection,
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final complejosAsync = ref.watch(complejosCercanosProvider(userPos));
-    final svc = ref.read(complejosServiceProvider);
-
+  Widget build(BuildContext context) {
     return Container(
-      decoration: const BoxDecoration(
-        color: AppColors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      height: 52,
+      decoration: BoxDecoration(
+        color: AppColors.sur,
+        borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Color(0x14000000),
-            blurRadius: 24,
-            offset: Offset(0, -4),
+            color: AppColors.tx.withValues(alpha: 0.10),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
           ),
         ],
+        border: Border.all(color: AppColors.bdr),
       ),
-      child: ListView(
-        controller: scrollController,
-        padding: EdgeInsets.zero,
-        children: [
-          // Handle
-          Center(
-            child: Container(
-              margin: const EdgeInsets.only(top: 12, bottom: 4),
-              width: 36,
-              height: 4,
-              decoration: BoxDecoration(
-                color: AppColors.line,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ),
-
-          // Header
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
-            child: Row(
+      child: selectedComplejo != null
+          ? Row(
               children: [
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: AppColors.acc,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        selectedComplejo!.nombre,
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.tx,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(
+                        selectedComplejo!.direccion,
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 11,
+                          color: AppColors.tx3,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                GestureDetector(
+                  onTap: onClearSelection,
+                  child: const Icon(Icons.close_rounded,
+                      color: AppColors.tx3, size: 18),
+                ),
+              ],
+            )
+          : Row(
+              children: [
+                const Icon(Icons.search_rounded,
+                    color: AppColors.tx3, size: 20),
+                const SizedBox(width: 12),
                 Text(
-                  'Canchas cercanas',
-                  style: GoogleFonts.bricolageGrotesque(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.ink,
+                  'Huancayo, Junín',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.tx,
                   ),
                 ),
                 const Spacer(),
-                complejosAsync.when(
-                  data: (list) => Text(
-                    '${list.length} resultados',
-                    style: GoogleFonts.outfit(
-                      fontSize: 13,
-                      color: AppColors.ink.withValues(alpha: 0.5),
-                    ),
-                  ),
-                  loading: () => const SizedBox.shrink(),
-                  error: (_, _) => const SizedBox.shrink(),
-                ),
+                const VerticalDivider(indent: 12, endIndent: 12, width: 24),
+                const Icon(Icons.tune_rounded,
+                    color: AppColors.acc, size: 20),
               ],
             ),
-          ),
-
-          // Lista horizontal de complejos
-          SizedBox(
-            height: 230,
-            child: complejosAsync.when(
-              loading: () => const Center(
-                child: CircularProgressIndicator(color: AppColors.green),
-              ),
-              error: (e, _) => Center(
-                child: Text(
-                  'Error cargando canchas',
-                  style: GoogleFonts.outfit(color: AppColors.ink),
-                ),
-              ),
-              data: (complejos) {
-                if (complejos.isEmpty) {
-                  return Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.sports_soccer_outlined,
-                            size: 40, color: AppColors.line),
-                        const SizedBox(height: 8),
-                        Text(
-                          'No hay canchas en tu zona',
-                          style: GoogleFonts.outfit(
-                              fontSize: 14,
-                              color: AppColors.ink.withValues(alpha: 0.5)),
-                        ),
-                      ],
-                    ),
-                  );
-                }
-                return ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemCount: complejos.length,
-                  separatorBuilder: (_, _) => const SizedBox(width: 12),
-                  itemBuilder: (context, i) {
-                    final c = complejos[i];
-                    final dist = svc.distanciaKm(
-                        userPos.latitude, userPos.longitude, c);
-                    return CanchaCardHorizontal(
-                      complejo: c,
-                      distanciaKm: dist,
-                      onTap: () => onComplejoTap(c),
-                    );
-                  },
-                );
-              },
-            ),
-          ),
-          const SizedBox(height: 24),
-        ],
-      ),
     );
   }
 }
 
-// ── Flash Slot sheet (inline) ─────────────────────────────────
+// ── Carousel inferior con complejos reales ───────────────────────────────────
 
-class _FlashSlotSheet extends StatelessWidget {
-  final FlashSlotModel slot;
-  final ComplejoModel complejo;
+class _ComplejoCarousel extends StatefulWidget {
+  final List<ComplejoModel> complejos;
+  final LatLng userPos;
+  final String? selectedId;
+  final void Function(ComplejoModel) onTap;
 
-  const _FlashSlotSheet({required this.slot, required this.complejo});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppColors.white,
-        borderRadius: BorderRadius.circular(24),
-      ),
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Badge Flash
-          Row(
-            children: [
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: AppColors.flashLight,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text('⚡', style: TextStyle(fontSize: 13)),
-                    const SizedBox(width: 4),
-                    Text(
-                      'Flash Slot',
-                      style: GoogleFonts.outfit(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.flash,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const Spacer(),
-              // Countdown
-              _CountdownTimer(expiraEn: slot.expiraEn),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Text(
-            complejo.nombre,
-            style: GoogleFonts.bricolageGrotesque(
-              fontSize: 22,
-              fontWeight: FontWeight.w700,
-              color: AppColors.ink,
-            ),
-          ),
-          Text(
-            '${slot.horaInicio} – ${slot.horaFin}',
-            style: GoogleFonts.outfit(
-                fontSize: 14, color: AppColors.ink.withValues(alpha: 0.6)),
-          ),
-          const SizedBox(height: 20),
-          // Precios
-          Row(
-            children: [
-              Text(
-                'S/${slot.precioOriginal.toStringAsFixed(0)}',
-                style: GoogleFonts.outfit(
-                  fontSize: 16,
-                  decoration: TextDecoration.lineThrough,
-                  color: AppColors.ink.withValues(alpha: 0.4),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Text(
-                'S/${slot.precioFlash.toStringAsFixed(0)}',
-                style: GoogleFonts.bricolageGrotesque(
-                  fontSize: 28,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.flash,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: AppColors.flashLight,
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(
-                  '-${slot.descuentoPct}%',
-                  style: GoogleFonts.outfit(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.flash,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          // Urgencia
-          LinearProgressIndicator(
-            value: (slot.vistasCount / 20).clamp(0, 1),
-            backgroundColor: AppColors.line,
-            color: AppColors.flashPin,
-            borderRadius: BorderRadius.circular(4),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            '${slot.vistasCount} personas viendo este slot',
-            style: GoogleFonts.outfit(
-              fontSize: 11,
-              color: AppColors.ink.withValues(alpha: 0.5),
-            ),
-          ),
-          const SizedBox(height: 20),
-          // Callout IA
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: AppColors.flashLight,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                  color: AppColors.flashPin.withValues(alpha: 0.4)),
-            ),
-            child: Row(
-              children: [
-                const Text('🤖', style: TextStyle(fontSize: 18)),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    'La IA detectó que esta cancha lleva más de 1 hora sin reservas. '
-                    'Precio reducido automáticamente.',
-                    style: GoogleFonts.outfit(
-                      fontSize: 12,
-                      color: AppColors.flash,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 20),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.flash,
-                foregroundColor: Colors.white,
-                minimumSize: const Size.fromHeight(52),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14)),
-              ),
-              onPressed: () {
-                Navigator.pop(context);
-                // Navegar a reservar con precio flash
-              },
-              child: Text(
-                'Reservar por S/${slot.precioFlash.toStringAsFixed(0)} · Flash',
-                style: GoogleFonts.outfit(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-          ),
-          SizedBox(height: MediaQuery.of(context).padding.bottom + 8),
-        ],
-      ),
-    );
-  }
-}
-
-// ── Countdown timer ──────────────────────────────────────────
-
-class _CountdownTimer extends StatefulWidget {
-  final DateTime expiraEn;
-  const _CountdownTimer({required this.expiraEn});
+  const _ComplejoCarousel({
+    required this.complejos,
+    required this.userPos,
+    required this.selectedId,
+    required this.onTap,
+  });
 
   @override
-  State<_CountdownTimer> createState() => _CountdownTimerState();
+  State<_ComplejoCarousel> createState() => _ComplejoCarouselState();
 }
 
-class _CountdownTimerState extends State<_CountdownTimer> {
-  late Timer _timer;
-  late Duration _remaining;
+class _ComplejoCarouselState extends State<_ComplejoCarousel> {
+  late final PageController _controller;
 
   @override
   void initState() {
     super.initState();
-    _remaining = widget.expiraEn.difference(DateTime.now());
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (!mounted) return;
-      setState(() =>
-          _remaining = widget.expiraEn.difference(DateTime.now()));
-    });
+    _controller = PageController(viewportFraction: 0.88);
+  }
+
+  @override
+  void didUpdateWidget(_ComplejoCarousel old) {
+    super.didUpdateWidget(old);
+    if (widget.selectedId != null && widget.selectedId != old.selectedId) {
+      final idx =
+          widget.complejos.indexWhere((c) => c.id == widget.selectedId);
+      if (idx >= 0 && _controller.hasClients) {
+        _controller.animateToPage(
+          idx,
+          duration: const Duration(milliseconds: 350),
+          curve: Curves.easeInOut,
+        );
+      }
+    }
   }
 
   @override
   void dispose() {
-    _timer.cancel();
+    _controller.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final isUrgent = _remaining.inMinutes < 10;
-    final label = _remaining.isNegative
-        ? 'Expirado'
-        : '${_remaining.inMinutes.toString().padLeft(2, '0')}:'
-            '${(_remaining.inSeconds % 60).toString().padLeft(2, '0')}';
+    return SizedBox(
+      height: 210,
+      child: Column(
+        children: [
+          Expanded(
+            child: PageView.builder(
+              controller: _controller,
+              itemCount: widget.complejos.length,
+              onPageChanged: (i) => widget.onTap(widget.complejos[i]),
+              itemBuilder: (context, i) {
+                final c = widget.complejos[i];
+                final isSelected = c.id == widget.selectedId;
+                final distKm = GeoUtils.distanciaKm(
+                  lat1: widget.userPos.latitude,
+                  lng1: widget.userPos.longitude,
+                  lat2: c.lat,
+                  lng2: c.lng,
+                );
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                return GestureDetector(
+                  onTap: () => widget.onTap(c),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 250),
+                    margin: EdgeInsets.fromLTRB(
+                        6, isSelected ? 0 : 8, 6, isSelected ? 0 : 8),
+                    decoration: BoxDecoration(
+                      color: AppColors.sur,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: isSelected ? AppColors.acc : AppColors.bdr,
+                        width: isSelected ? 2 : 1,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.tx.withValues(
+                              alpha: isSelected ? 0.14 : 0.07),
+                          blurRadius: isSelected ? 20 : 12,
+                          offset: const Offset(0, 6),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        // Imagen
+                        ClipRRect(
+                          borderRadius: const BorderRadius.horizontal(
+                              left: Radius.circular(18)),
+                          child: SizedBox(
+                            width: 110,
+                            height: double.infinity,
+                            child: c.imagenPrincipal.isNotEmpty
+                                ? Image.network(
+                                    c.imagenPrincipal,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, _, _) =>
+                                        _placeholderImagen(),
+                                  )
+                                : _placeholderImagen(),
+                          ),
+                        ),
+
+                        // Info
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.all(14),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisAlignment:
+                                  MainAxisAlignment.spaceBetween,
+                              children: [
+                                Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      c.nombre,
+                                      style:
+                                          GoogleFonts.bricolageGrotesque(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppColors.tx,
+                                        letterSpacing: -0.3,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Row(
+                                      children: [
+                                        const Icon(
+                                            Icons.location_on_rounded,
+                                            size: 11,
+                                            color: AppColors.tx3),
+                                        const SizedBox(width: 2),
+                                        Text(
+                                          GeoUtils.formatearDistancia(
+                                              distKm),
+                                          style: GoogleFonts.outfit(
+                                              fontSize: 11,
+                                              color: AppColors.tx3),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        const Icon(Icons.star_rounded,
+                                            size: 11,
+                                            color: AppColors.amber),
+                                        const SizedBox(width: 2),
+                                        Text(
+                                          c.rating.toStringAsFixed(1),
+                                          style: GoogleFonts.outfit(
+                                              fontSize: 11,
+                                              color: AppColors.tx3),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'Desde S/40',
+                                          style: GoogleFonts.outfit(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w700,
+                                            color: AppColors.acc,
+                                          ),
+                                        ),
+                                        Text(
+                                          '${c.horarioApertura} – ${c.horarioCierre}',
+                                          style: GoogleFonts.outfit(
+                                            fontSize: 10,
+                                            color: AppColors.tx3,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.end,
+                                      children: [
+                                        GestureDetector(
+                                          onTap: () => context
+                                              .push('/complejo/${c.id}'),
+                                          child: Container(
+                                            padding:
+                                                const EdgeInsets.symmetric(
+                                                    horizontal: 10,
+                                                    vertical: 6),
+                                            decoration: BoxDecoration(
+                                              color: AppColors.acc,
+                                              borderRadius:
+                                                  BorderRadius.circular(10),
+                                            ),
+                                            child: Text(
+                                              'Ver canchas',
+                                              style: GoogleFonts.outfit(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w700,
+                                                color: Colors.white,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        _RutaChip(isSelected: isSelected),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8, top: 6),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(
+                widget.complejos.length,
+                (i) {
+                  final isActive =
+                      widget.complejos[i].id == widget.selectedId;
+                  return AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    margin: const EdgeInsets.symmetric(horizontal: 3),
+                    width: isActive ? 16 : 6,
+                    height: 6,
+                    decoration: BoxDecoration(
+                      color: isActive
+                          ? AppColors.acc
+                          : AppColors.tx3.withValues(alpha: 0.4),
+                      borderRadius: BorderRadius.circular(3),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _placeholderImagen() => Container(
+        color: AppColors.sur2,
+        child: const Center(
+          child: Icon(Icons.sports_soccer_rounded,
+              color: AppColors.acc, size: 28),
+        ),
+      );
+}
+
+// ── Chip de estado de ruta ────────────────────────────────────────────────────
+
+class _RutaChip extends StatelessWidget {
+  final bool isSelected;
+  const _RutaChip({required this.isSelected});
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: isUrgent
-            ? AppColors.errorRedLight
-            : AppColors.flashLight,
-        borderRadius: BorderRadius.circular(8),
+        color: isSelected ? AppColors.acc : AppColors.accLight,
+        borderRadius: BorderRadius.circular(10),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(
-            Icons.timer_rounded,
+            isSelected
+                ? Icons.directions_rounded
+                : Icons.directions_outlined,
             size: 13,
-            color: isUrgent ? AppColors.errorRed : AppColors.flash,
+            color: isSelected ? Colors.white : AppColors.acc,
           ),
           const SizedBox(width: 4),
           Text(
-            label,
+            isSelected ? 'Ruta activa' : 'Ver ruta',
             style: GoogleFonts.outfit(
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              color: isUrgent ? AppColors.errorRed : AppColors.flash,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: isSelected ? Colors.white : AppColors.acc,
             ),
           ),
         ],

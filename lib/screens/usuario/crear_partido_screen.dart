@@ -267,7 +267,7 @@ class _CrearPartidoScreenState extends ConsumerState<CrearPartidoScreen> {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _loading = true);
 
-    final perfil = ref.read(perfilUsuarioProvider).valueOrNull;
+    final perfil = ref.read(perfilUsuarioProvider).asData?.value;
     if (perfil == null) return;
 
     final partido = PartidoModel(

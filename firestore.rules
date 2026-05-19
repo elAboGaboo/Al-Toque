@@ -1,9 +1,8 @@
 rules_version = '2';
 
 // ─────────────────────────────────────────────────────────────────
-//  CanchApp · Reglas de Firestore
-//  Modelo: usuarios (rol: jugador|admin), complejos/canchas,
-//          reservas, partidos, flashSlots, prediccionesIA
+//  Al Toque · Reglas de Firestore
+//  Roles: jugador | dueno  (antes era admin → ahora es dueno)
 // ─────────────────────────────────────────────────────────────────
 
 service cloud.firestore {
@@ -18,62 +17,66 @@ service cloud.firestore {
       return isAuthed() && request.auth.uid == uid;
     }
 
-    function isAdmin() {
+    function isDueno() {
       return isAuthed() &&
         exists(/databases/$(database)/documents/usuarios/$(request.auth.uid)) &&
-        get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.rol == 'admin';
+        get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.rol == 'dueno';
     }
 
-    function isAdminDeComplejo(complejoId) {
+    function isDuenoDeComplejo(complejoId) {
       return isAuthed() &&
         exists(/databases/$(database)/documents/usuarios/$(request.auth.uid)) &&
-        get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.rol == 'admin' &&
+        get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.rol == 'dueno' &&
         get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.complejoId == complejoId;
     }
 
     // ── Usuarios ───────────────────────────────────────────────
     match /usuarios/{uid} {
-      // Lectura: cualquier autenticado (para ver nombre/avatar en partidos)
       allow read: if isAuthed();
-      // Crear/actualizar: solo el dueño del documento
+      // Crear perfil: jugador o dueno
       allow create: if isOwner(uid)
-        && request.resource.data.rol in ['jugador', 'admin'];
+        && request.resource.data.rol in ['jugador', 'dueno'];
+      // Actualizar: solo el dueño del doc, sin cambiar rol
       allow update: if isOwner(uid)
-        // No permitir auto-promoción a admin
         && request.resource.data.rol == resource.data.rol;
       allow delete: if false;
     }
 
     // ── Complejos ──────────────────────────────────────────────
     match /complejos/{complejoId} {
-      allow read: if true;  // Públicos: salen en el mapa
-      allow create: if isAdmin();
-      allow update, delete: if isAdminDeComplejo(complejoId);
+      // Lectura pública: aparecen en el mapa y la lista del jugador
+      allow read: if true;
+      // Crear: solo dueños autenticados
+      allow create: if isDueno();
+      // Actualizar/eliminar: solo el dueño asignado a ese complejo
+      allow update, delete: if isDuenoDeComplejo(complejoId);
 
       // Sub-colección: canchas
       match /canchas/{canchaId} {
         allow read: if true;
-        allow write: if isAdminDeComplejo(complejoId);
+        // El dueño del complejo puede gestionar sus canchas.
+        // Un dueño también puede crear canchas en complejos sin dueño
+        // (necesario para el seeder de datos de demostración).
+        allow write: if isDuenoDeComplejo(complejoId) ||
+          (isDueno() &&
+           get(/databases/$(database)/documents/complejos/$(complejoId)).data.duenoUid == '');
       }
     }
 
     // ── Reservas ───────────────────────────────────────────────
     match /reservas/{reservaId} {
-      // Lectura: dueño de la reserva o admin del complejo
       allow read: if isAuthed() && (
         resource.data.userId == request.auth.uid ||
-        isAdminDeComplejo(resource.data.complejoId)
+        isDuenoDeComplejo(resource.data.complejoId)
       );
-      // Crear: cualquier autenticado, pero el userId debe ser el suyo
       allow create: if isAuthed()
         && request.resource.data.userId == request.auth.uid
         && request.resource.data.estado in ['pendiente', 'confirmada'];
-      // Actualizar: dueño o admin
       allow update: if isAuthed() && (
         resource.data.userId == request.auth.uid ||
-        isAdminDeComplejo(resource.data.complejoId)
+        isDuenoDeComplejo(resource.data.complejoId)
       );
-      allow delete: if isAdminDeComplejo(resource.data.complejoId);
+      allow delete: if isDuenoDeComplejo(resource.data.complejoId);
     }
 
     // ── Partidos ───────────────────────────────────────────────
@@ -81,23 +84,31 @@ service cloud.firestore {
       allow read: if isAuthed();
       allow create: if isAuthed()
         && request.resource.data.organizadorId == request.auth.uid;
-      // Update: cualquiera puede unirse/salir, solo organizador puede cancelar
       allow update: if isAuthed();
       allow delete: if isAuthed() && (
-        resource.data.organizadorId == request.auth.uid || isAdmin()
+        resource.data.organizadorId == request.auth.uid || isDueno()
       );
     }
 
-    // ── Flash Slots (ofertas de última hora) ───────────────────
+    // ── Flash Slots ────────────────────────────────────────────
     match /flashSlots/{slotId} {
       allow read: if isAuthed();
-      allow write: if isAuthed() &&
-        isAdminDeComplejo(request.resource.data.complejoId);
+      allow write: if isDuenoDeComplejo(resource.data.complejoId);
     }
 
-    // ── Predicciones IA (panel admin) ──────────────────────────
+    // ── Predicciones IA ────────────────────────────────────────
     match /prediccionesIA/{predId} {
-      allow read, write: if isAdmin();
+      allow read: if isAuthed();
+      allow write: if isDueno();
+    }
+
+    // ── Reseñas ────────────────────────────────────────────────
+    match /resenas/{resenaId} {
+      allow read: if true;
+      allow create: if isAuthed()
+        && request.resource.data.userId == request.auth.uid;
+      allow update: if isDuenoDeComplejo(resource.data.complejoId);
+      allow delete: if false;
     }
   }
 }

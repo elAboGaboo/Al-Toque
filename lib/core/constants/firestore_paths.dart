@@ -9,7 +9,7 @@ class FirestorePaths {
   static const String partidos = 'partidos';
   static const String usuarios = 'usuarios';
   static const String prediccionesIA = 'prediccionesIA';
-  static const String predicciones = 'prediccionesIA';
+  static const String resenas = 'resenas';
 
   // Sub-colecciones
   static String canchas(String complejoId) =>
@@ -32,4 +32,7 @@ class FirestorePaths {
 
   static String usuarioDoc(String uid) =>
       '$usuarios/$uid';
+
+  static String resenaDoc(String resenaId) =>
+      '$resenas/$resenaId';
 }

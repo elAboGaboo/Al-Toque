@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(flutter run *)",
-      "Bash(flutter --version)",
-      "Read(//c/Flutter/packages/flutter_tools/lib/src/**)"
-    ]
-  }
-}

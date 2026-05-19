@@ -1,3 +1,9 @@
+# Secrets — never commit real keys
+lib/core/constants/app_constants.dart
+
+# Claude Code internals
+.claude/
+
 # Miscellaneous
 *.class
 *.log

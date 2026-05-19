@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/cancha_model.dart';
 import '../models/complejo_model.dart';
 import '../repositories/complejos_repository.dart';
+import 'auth_provider.dart';
 
 final complejosRepositoryProvider = Provider<ComplejosRepository>(
   (_) => ComplejosRepository(),
@@ -27,10 +28,26 @@ final canchasProvider =
 });
 
 /// Complejo seleccionado en el mapa (para bottom sheet detalle).
-final complejoSeleccionadoProvider = StateProvider<ComplejoModel?>((ref) => null);
+class ComplejoSeleccionadoNotifier extends Notifier<ComplejoModel?> {
+  @override
+  ComplejoModel? build() => null;
+}
+
+final complejoSeleccionadoProvider =
+    NotifierProvider<ComplejoSeleccionadoNotifier, ComplejoModel?>(
+  ComplejoSeleccionadoNotifier.new,
+);
 
 /// Cancha seleccionada (para flujo de reserva).
-final canchaSeleccionadaProvider = StateProvider<CanchaModel?>((ref) => null);
+class CanchaSeleccionadaNotifier extends Notifier<CanchaModel?> {
+  @override
+  CanchaModel? build() => null;
+}
+
+final canchaSeleccionadaProvider =
+    NotifierProvider<CanchaSeleccionadaNotifier, CanchaModel?>(
+  CanchaSeleccionadaNotifier.new,
+);
 
 /// One-shot: obtener un complejo por ID.
 final complejoFutureProvider =
@@ -47,15 +64,40 @@ final canchaFutureProvider =
       .getCancha(ids.complejoId, ids.canchaId);
 });
 
-/// Filtro de deporte en búsqueda de complejos.
-final filtroDeporteProvider = StateProvider<String?>((ref) => null);
-
-/// Complejos filtrados por deporte.
-final complejosFiltradosProvider =
-    Provider<AsyncValue<List<ComplejoModel>>>((ref) {
-  final complejos = ref.watch(complejosProvider);
-  final deporte = ref.watch(filtroDeporteProvider);
-  if (deporte == null) return complejos;
-  return complejos.whenData((list) =>
-      list.where((c) => true).toList()); // filtro real por cancha en repo
+/// Stream admin de canchas — incluye activas E inactivas.
+final canchasAdminProvider =
+    StreamProvider.family<List<CanchaModel>, String>((ref, complejoId) {
+  return ref
+      .watch(complejosRepositoryProvider)
+      .streamCanchasAdmin(complejoId);
 });
+
+/// Stream de todos los complejos del admin logueado
+final misComplejosProvider = StreamProvider<List<ComplejoModel>>((ref) {
+  final perfil = ref.watch(perfilUsuarioProvider);
+  final complejosIds = perfil.asData?.value?.complejosIds ?? [];
+
+  if (complejosIds.isEmpty) {
+    return Stream.value([]);
+  }
+
+  return ref
+      .watch(complejosRepositoryProvider)
+      .streamComplejos()
+      .map((todos) => todos.where((c) => complejosIds.contains(c.id)).toList());
+});
+
+/// Notifier para invalidar canchas cuando se crea/edita una
+class CanchasAdminNotifier extends Notifier<void> {
+  @override
+  void build() {}
+
+  void invalidate() {
+    ref.invalidateSelf();
+  }
+}
+
+final canchasAdminNotifierProvider =
+    NotifierProvider<CanchasAdminNotifier, void>(
+  CanchasAdminNotifier.new,
+);
