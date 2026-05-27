@@ -1,4 +1,5 @@
 // screens/auth/welcome_screen.dart
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -28,6 +29,9 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
   bool _obscure = true;
   bool _loadingLogin = false;
 
+  /// Rol esperado para el login actual: 'jugador' | 'dueno' | null
+  String? _rolLogin;
+
   @override
   void initState() {
     super.initState();
@@ -41,7 +45,10 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
     super.dispose();
   }
 
-  void _irA(String modo) => setState(() => _modo = modo);
+  void _irA(String modo, {String? rol}) =>
+      setState(() { _modo = modo; if (rol != null) _rolLogin = rol; });
+
+  void _volverARoles() => setState(() { _modo = 'roles'; _rolLogin = null; });
 
   // ── LOGIN ──────────────────────────────────────────────
   Future<void> _login() async {
@@ -58,7 +65,38 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
     if (st.hasError) {
       _mostrarError(st.error.toString());
       setState(() => _loadingLogin = false);
+      return;
     }
+
+    // ── Validar que el rol de la cuenta coincide con el acceso elegido ──
+    if (_rolLogin != null) {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        final perfil = await ref
+            .read(usuariosRepositoryProvider)
+            .getUsuario(user.uid);
+
+        if (!mounted) return;
+
+        if (perfil != null && perfil.rol != _rolLogin) {
+          // Rol incorrecto → cerrar sesión y mostrar error descriptivo
+          await ref.read(authNotifierProvider.notifier).logout();
+          if (!mounted) return;
+          final esperado = _rolLogin == 'jugador' ? 'jugador' : 'dueño';
+          final incorrecto = _rolLogin == 'jugador' ? 'dueño de complejo' : 'jugador';
+          final seccion = _rolLogin == 'jugador'
+              ? '"Tengo un complejo → Ingresar"'
+              : '"Soy jugador → Ingresar"';
+          _mostrarError(
+            'Esta cuenta es de $incorrecto, no de $esperado. '
+            'Para ingresar con esta cuenta usa $seccion.',
+          );
+          setState(() => _loadingLogin = false);
+          return;
+        }
+      }
+    }
+
     // GoRouter maneja la navegación al detectar el cambio de authState
   }
 
@@ -168,7 +206,7 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
             color: AppColors.aacc,
             onCrearCuenta: () => context.push('/registro?rol=jugador'),
             onIngresarLabel: 'Ya tengo cuenta → Ingresar',
-            onIngresar: () => _irA('login'),
+            onIngresar: () => _irA('login', rol: 'jugador'),
           ),
 
           const SizedBox(height: 16),
@@ -182,7 +220,7 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
             crearCuentaLabel: 'Registrar mi complejo',
             onCrearCuenta: () => context.push('/registro?rol=dueno'),
             onIngresarLabel: 'Ya tengo cuenta → Ingresar',
-            onIngresar: () => _irA('login'),
+            onIngresar: () => _irA('login', rol: 'dueno'),
           ),
 
           const SizedBox(height: 32),
@@ -204,7 +242,7 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             const SizedBox(height: 28),
-            _buildBackButton(() => _irA('roles')),
+            _buildBackButton(_volverARoles),
             const SizedBox(height: 24),
             _buildHeader(),
             const SizedBox(height: 36),
@@ -221,7 +259,11 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Inicia sesión con tu cuenta registrada',
+              _rolLogin == 'dueno'
+                  ? 'Acceso para dueños de complejo'
+                  : _rolLogin == 'jugador'
+                      ? 'Acceso para jugadores'
+                      : 'Inicia sesión con tu cuenta registrada',
               textAlign: TextAlign.center,
               style: GoogleFonts.outfit(
                 fontSize: 13,
@@ -296,7 +338,13 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
 
             Center(
               child: TextButton(
-                onPressed: () => _irA('roles'),
+                onPressed: () {
+                  if (_rolLogin != null) {
+                    context.push('/registro?rol=$_rolLogin');
+                  } else {
+                    _volverARoles();
+                  }
+                },
                 child: Text(
                   '¿No tienes cuenta? Regístrate aquí',
                   style: GoogleFonts.outfit(

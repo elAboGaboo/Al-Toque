@@ -1,9 +1,10 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_localizations/flutter_localizations.dart'; 
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'core/router/app_router.dart';
@@ -38,6 +39,15 @@ void main() async {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
+
+    // ── Deshabilitar persistencia offline de Firestore ────────────────────────
+    // Con persistencia activada (default), el SDK Android bloquea el platform
+    // channel thread al consultar subcollections no cacheadas → ANR en Android.
+    // Sin persistencia, las queries van al servidor y fallan rápido si no hay red.
+    FirebaseFirestore.instance.settings = const Settings(
+      persistenceEnabled: false,
+    );
+
     // Registrar handler background de FCM
     FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
     // Inicializar servicio de notificaciones

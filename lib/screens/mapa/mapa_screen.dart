@@ -12,6 +12,7 @@ import 'package:latlong2/latlong.dart';
 import '../../core/services/directions_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/geo_utils.dart';
+import '../../core/utils/maps_launcher.dart';
 import '../../models/complejo_model.dart';
 import '../../providers/complejos_provider.dart';
 import 'widgets/filter_bar.dart';
@@ -29,6 +30,7 @@ class _MapaScreenState extends ConsumerState<MapaScreen> {
 
   // Posición real del usuario — arranca en Huancayo y se actualiza con GPS
   LatLng _userPos = const LatLng(-12.0651, -75.2049);
+  double _userAccuracy = 0.0; // precisión GPS en metros
   bool _locationLoading = true;
   StreamSubscription<Position>? _posSub;
 
@@ -84,6 +86,7 @@ class _MapaScreenState extends ConsumerState<MapaScreen> {
       final latlng = LatLng(pos.latitude, pos.longitude);
       setState(() {
         _userPos = latlng;
+        _userAccuracy = pos.accuracy;
         _locationLoading = false;
       });
       // Centrar mapa en la posición real obtenida
@@ -98,11 +101,14 @@ class _MapaScreenState extends ConsumerState<MapaScreen> {
     _posSub = Geolocator.getPositionStream(
       locationSettings: const LocationSettings(
         accuracy: LocationAccuracy.high,
-        distanceFilter: 15, // cada 15 metros
+        distanceFilter: 10, // actualizar cada 10 metros
       ),
     ).listen((pos) {
       if (mounted) {
-        setState(() => _userPos = LatLng(pos.latitude, pos.longitude));
+        setState(() {
+          _userPos = LatLng(pos.latitude, pos.longitude);
+          _userAccuracy = pos.accuracy;
+        });
       }
     });
   }
@@ -180,13 +186,13 @@ class _MapaScreenState extends ConsumerState<MapaScreen> {
         .toList();
 
     final markers = <Marker>[
-      // Punto azul del usuario
+      // Punto de ubicación del usuario — animado con pulso
       Marker(
         point: _userPos,
-        width: 22,
-        height: 22,
+        width: 48,
+        height: 48,
         alignment: Alignment.center,
-        child: MapMarkerPainter.pinUsuario(),
+        child: const _LiveLocationMarker(),
       ),
       // Pins de complejos
       for (final c in complejos)
@@ -223,13 +229,29 @@ class _MapaScreenState extends ConsumerState<MapaScreen> {
               ),
               children: [
                 TileLayer(
+                  // OpenStreetMap — más confiable que CartoDB en Android
                   urlTemplate:
-                      'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-                  subdomains: const ['a', 'b', 'c', 'd'],
+                      'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                  subdomains: const ['a', 'b', 'c'],
                   userAgentPackageName: 'com.altoque.app',
-                  retinaMode: RetinaMode.isHighDensity(context),
-                  maxZoom: 20,
+                  maxZoom: 19,
                 ),
+                // ── Círculo de precisión GPS ──────────────────────────
+                // Solo lo mostramos cuando la precisión es razonable (<300 m).
+                if (_userAccuracy > 0 && _userAccuracy < 300)
+                  CircleLayer(
+                    circles: [
+                      CircleMarker(
+                        point: _userPos,
+                        radius: _userAccuracy,
+                        useRadiusInMeter: true,
+                        color: const Color(0xFF2563EB).withValues(alpha: 0.08),
+                        borderColor:
+                            const Color(0xFF2563EB).withValues(alpha: 0.25),
+                        borderStrokeWidth: 1.5,
+                      ),
+                    ],
+                  ),
                 if (_polylinePoints.isNotEmpty)
                   PolylineLayer(
                     polylines: [
@@ -381,6 +403,10 @@ class _MapaScreenState extends ConsumerState<MapaScreen> {
                   userPos: _userPos,
                   selectedId: _selectedComplejo?.id,
                   onTap: _onComplejoTap,
+                  onVerCanchas: (c) {
+                    ref.read(complejoSeleccionadoProvider.notifier).select(c);
+                    context.push('/complejo/${c.id}');
+                  },
                 ),
               ),
 
@@ -524,12 +550,16 @@ class _ComplejoCarousel extends StatefulWidget {
   final LatLng userPos;
   final String? selectedId;
   final void Function(ComplejoModel) onTap;
+  /// Callback para "Ver canchas" — setea el provider y navega desde el padre
+  /// (que tiene acceso a ref) para evitar una llamada Firestore extra.
+  final void Function(ComplejoModel) onVerCanchas;
 
   const _ComplejoCarousel({
     required this.complejos,
     required this.userPos,
     required this.selectedId,
     required this.onTap,
+    required this.onVerCanchas,
   });
 
   @override
@@ -676,7 +706,7 @@ class _ComplejoCarouselState extends State<_ComplejoCarousel> {
                                             color: AppColors.amber),
                                         const SizedBox(width: 2),
                                         Text(
-                                          c.rating.toStringAsFixed(1),
+                                          c.ciudad,
                                           style: GoogleFonts.outfit(
                                               fontSize: 11,
                                               color: AppColors.tx3),
@@ -715,9 +745,10 @@ class _ComplejoCarouselState extends State<_ComplejoCarousel> {
                                       crossAxisAlignment:
                                           CrossAxisAlignment.end,
                                       children: [
+                                        // ── Ver canchas ──────────────
                                         GestureDetector(
-                                          onTap: () => context
-                                              .push('/complejo/${c.id}'),
+                                          onTap: () =>
+                                              widget.onVerCanchas(c),
                                           child: Container(
                                             padding:
                                                 const EdgeInsets.symmetric(
@@ -739,7 +770,13 @@ class _ComplejoCarouselState extends State<_ComplejoCarousel> {
                                           ),
                                         ),
                                         const SizedBox(height: 4),
-                                        _RutaChip(isSelected: isSelected),
+                                        // ── Cómo llegar (Google Maps) ─
+                                        _ComoLlegarChip(
+                                          lat: c.lat,
+                                          lng: c.lng,
+                                          nombre: c.nombre,
+                                          isSelected: isSelected,
+                                        ),
                                       ],
                                     ),
                                   ],
@@ -794,41 +831,151 @@ class _ComplejoCarouselState extends State<_ComplejoCarousel> {
       );
 }
 
-// ── Chip de estado de ruta ────────────────────────────────────────────────────
+// ── Marcador de ubicación del usuario (animado) ───────────────────────────────
+//
+// Un punto azul con anillo de pulso que se expande y desvanece en loop.
+// El StatefulWidget propio evita que la animación se reinicie al hacer
+// setState en _MapaScreenState (GPS update, complejo tap, etc.).
 
-class _RutaChip extends StatelessWidget {
-  final bool isSelected;
-  const _RutaChip({required this.isSelected});
+class _LiveLocationMarker extends StatefulWidget {
+  const _LiveLocationMarker();
+
+  @override
+  State<_LiveLocationMarker> createState() => _LiveLocationMarkerState();
+}
+
+class _LiveLocationMarkerState extends State<_LiveLocationMarker>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+  late Animation<double> _scale;
+  late Animation<double> _opacity;
+
+  static const _dotColor = Color(0xFF2563EB); // azul GPS estándar
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2200),
+    )..repeat();
+
+    _scale = Tween<double>(begin: 0.4, end: 1.0).animate(
+      CurvedAnimation(parent: _ctrl, curve: Curves.easeOut),
+    );
+    _opacity = Tween<double>(begin: 0.55, end: 0.0).animate(
+      CurvedAnimation(parent: _ctrl, curve: Curves.easeOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: isSelected ? AppColors.acc : AppColors.accLight,
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            isSelected
-                ? Icons.directions_rounded
-                : Icons.directions_outlined,
-            size: 13,
-            color: isSelected ? Colors.white : AppColors.acc,
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (_, _) {
+        return SizedBox(
+          width: 48,
+          height: 48,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              // ── Anillo de pulso ────────────────────────────────────
+              Opacity(
+                opacity: _opacity.value,
+                child: Container(
+                  width: 14 + 34 * _scale.value,
+                  height: 14 + 34 * _scale.value,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: _dotColor.withValues(alpha: 0.25),
+                    border: Border.all(
+                      color: _dotColor.withValues(alpha: 0.35),
+                      width: 1.5,
+                    ),
+                  ),
+                ),
+              ),
+
+              // ── Punto central ──────────────────────────────────────
+              Container(
+                width: 16,
+                height: 16,
+                decoration: BoxDecoration(
+                  color: _dotColor,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 2.5),
+                  boxShadow: [
+                    BoxShadow(
+                      color: _dotColor.withValues(alpha: 0.45),
+                      blurRadius: 8,
+                      spreadRadius: 1,
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 4),
-          Text(
-            isSelected ? 'Ruta activa' : 'Ver ruta',
-            style: GoogleFonts.outfit(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
+        );
+      },
+    );
+  }
+}
+
+// ── Chip "Cómo llegar" — abre Google Maps ────────────────────────────────────
+//
+// Tap → MapsLauncher.irA() → abre Google Maps / app de navegación nativa.
+// Visualmente indica si la ruta en mapa está activa (isSelected).
+
+class _ComoLlegarChip extends StatelessWidget {
+  final double lat;
+  final double lng;
+  final String nombre;
+  final bool isSelected;
+
+  const _ComoLlegarChip({
+    required this.lat,
+    required this.lng,
+    required this.nombre,
+    required this.isSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => MapsLauncher.irA(lat: lat, lng: lng, nombre: nombre),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding:
+            const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: isSelected ? AppColors.acc : AppColors.accLight,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.directions_rounded,
+              size: 13,
               color: isSelected ? Colors.white : AppColors.acc,
             ),
-          ),
-        ],
+            const SizedBox(width: 4),
+            Text(
+              isSelected ? 'Ruta activa' : 'Cómo llegar',
+              style: GoogleFonts.outfit(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: isSelected ? Colors.white : AppColors.acc,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

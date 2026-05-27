@@ -149,6 +149,14 @@ class _AdminHorariosScreenState extends ConsumerState<AdminHorariosScreen>
                 canchas: canchas,
                 selectedIdx: _canchaIdx,
                 onSelect: (i) => setState(() => _canchaIdx = i),
+                onAgregarCancha: () async {
+                  await Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => AdminAgregarCanchaScreen(
+                      complejoId: complejoId,
+                    ),
+                  ));
+                  // El stream canchasAdminProvider se actualiza solo vía Firestore
+                },
               ),
 
               // ── Schedule ────────────────────────────────────
@@ -412,11 +420,13 @@ class _CanchaTabBar extends StatelessWidget {
   final List<CanchaModel> canchas;
   final int selectedIdx;
   final void Function(int) onSelect;
+  final VoidCallback? onAgregarCancha;
 
   const _CanchaTabBar({
     required this.canchas,
     required this.selectedIdx,
     required this.onSelect,
+    this.onAgregarCancha,
   });
 
   @override
@@ -427,8 +437,41 @@ class _CanchaTabBar extends StatelessWidget {
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
-        itemCount: canchas.length,
+        // +1 por el botón "+"
+        itemCount: canchas.length + 1,
         itemBuilder: (_, i) {
+          // Último ítem: botón agregar cancha
+          if (i == canchas.length) {
+            return GestureDetector(
+              onTap: onAgregarCancha,
+              child: Container(
+                margin: const EdgeInsets.only(right: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(
+                  color: AppColors.aaccD,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                      color: AppColors.aacc.withValues(alpha: 0.4)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.add_rounded,
+                        size: 15, color: AppColors.aacc),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Agregar',
+                      style: GoogleFonts.outfit(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.aacc,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+
           final c = canchas[i];
           final sel = i == selectedIdx;
           return GestureDetector(
@@ -825,11 +868,9 @@ class _TipoBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final (label, color) = reserva.estaPendiente
         ? ('PENDIENTE', AppColors.aamber)
-        : reserva.esFlash
-            ? ('FLASH', AppColors.aamber)
-            : reserva.esPartido
-                ? ('PARTIDO', AppColors.ablu)
-                : ('RESERVADA', AppColors.ared);
+        : reserva.esPartido
+            ? ('PARTIDO', AppColors.ablu)
+            : ('RESERVADA', AppColors.ared);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
@@ -877,7 +918,6 @@ class _ActionBtn extends StatelessWidget {
 
 Color _colorForReserva(ReservaModel r) {
   if (r.estaPendiente) return AppColors.aamber;
-  if (r.esFlash) return AppColors.aamber;
   if (r.esPartido) return AppColors.ablu;
   return AppColors.ared;
 }
@@ -959,11 +999,11 @@ class _ReservaDetalle extends StatelessWidget {
           _InfoRow(
               icon: Icons.payment_rounded,
               label: 'Pago',
-              value: '${reserva.metodoPago.toUpperCase()} · ${_pagoLabel(reserva.estadoPago)}'),
+              value: reserva.metodoPago.toUpperCase()),
           _InfoRow(
               icon: Icons.confirmation_number_rounded,
               label: 'Tipo',
-              value: _tipoLabel(reserva)),
+              value: reserva.esPartido ? 'Partido grupal' : 'Reserva directa'),
           _InfoRow(
               icon: Icons.person_outline_rounded,
               label: 'Cliente',
@@ -1051,21 +1091,6 @@ class _ReservaDetalle extends StatelessWidget {
     if (r.estaConfirmada) return 'CONFIRMADA';
     if (r.estaCancelada) return 'CANCELADA';
     return r.estado.toUpperCase();
-  }
-
-  String _pagoLabel(String estadoPago) {
-    const labels = {
-      'retenido': 'retenido',
-      'liberado': 'liberado ✓',
-      'devuelto': 'devuelto',
-    };
-    return labels[estadoPago] ?? estadoPago;
-  }
-
-  String _tipoLabel(ReservaModel r) {
-    if (r.esFlash) return 'Flash (oferta)';
-    if (r.esPartido) return 'Partido grupal';
-    return r.modoReserva == 'solicitud' ? 'Solicitud' : 'Instantánea';
   }
 }
 

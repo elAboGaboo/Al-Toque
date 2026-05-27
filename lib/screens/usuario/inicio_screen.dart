@@ -17,7 +17,14 @@ class InicioScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final perfil = ref.watch(perfilUsuarioProvider).asData?.value;
-    final nombre = perfil?.nombre.split(' ').first ?? 'Carlos';
+    final nombre = perfil?.nombre.split(' ').first ?? 'Jugador';
+
+    final hora = DateTime.now().hour;
+    final saludo = hora < 12
+        ? 'Buenos días 🌤️'
+        : hora < 19
+            ? 'Buenas tardes 👋'
+            : 'Buenas noches 🌙';
 
     return Scaffold(
       backgroundColor: AppColors.bg,
@@ -36,7 +43,7 @@ class InicioScreen extends ConsumerWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Buenas tardes 👋',
+                          saludo,
                           style: GoogleFonts.plusJakartaSans(
                             fontSize: 12,
                             color: AppColors.tx3,
@@ -521,7 +528,16 @@ class _ComplejosSection extends ConsumerWidget {
             children: [
               for (int i = 0; i < complejos.length; i++) ...[
                 if (i > 0) const SizedBox(height: 12),
-                _ComplexCard(complejo: complejos[i]),
+                _ComplexCard(
+                  complejo: complejos[i],
+                  // Seteamos el modelo en el provider ANTES de navegar
+                  // → la pantalla de detalle muestra el header sin llamada Firestore extra
+                  onVerCanchas: () {
+                    ref.read(complejoSeleccionadoProvider.notifier)
+                        .select(complejos[i]);
+                    context.push('/complejo/${complejos[i].id}');
+                  },
+                ),
               ],
             ],
           ),
@@ -533,12 +549,30 @@ class _ComplejosSection extends ConsumerWidget {
 
 // ── Tarjeta de complejo real ─────────────────────────────────────────────────
 
-class _ComplexCard extends StatelessWidget {
+class _ComplexCard extends ConsumerWidget {
   final ComplejoModel complejo;
-  const _ComplexCard({required this.complejo});
+  /// Callback que setea el provider y navega — recibido desde _ComplejosSection.
+  final VoidCallback onVerCanchas;
+  const _ComplexCard({required this.complejo, required this.onVerCanchas});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final canchasAsync = ref.watch(canchasProvider(complejo.id));
+
+    final canchaCount = canchasAsync.when(
+      loading: () => '…',
+      error: (_, _) => '?',
+      data: (list) => '${list.length}',
+    );
+
+    final precioDesde = canchasAsync.asData?.value
+        .map((c) => c.precioBase)
+        .fold<double?>(null, (min, p) => min == null || p < min ? p : min);
+
+    final precioLabel = precioDesde != null
+        ? 'S/${precioDesde.toStringAsFixed(0)}'
+        : '—';
+
     return Container(
       decoration: BoxDecoration(
         color: AppColors.sur,
@@ -630,11 +664,11 @@ class _ComplexCard extends StatelessWidget {
                 _meta(Icons.access_time_rounded,
                     '${complejo.horarioApertura}–${complejo.horarioCierre}'),
                 const Spacer(),
-                const Icon(Icons.star_rounded,
-                    size: 11, color: AppColors.amber),
+                const Icon(Icons.sports_soccer_rounded,
+                    size: 11, color: AppColors.acc),
                 const SizedBox(width: 3),
                 Text(
-                  complejo.rating.toStringAsFixed(1),
+                  '$canchaCount canchas',
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
@@ -659,9 +693,9 @@ class _ComplexCard extends StatelessWidget {
                       color: AppColors.tx,
                     ),
                     children: [
-                      const TextSpan(text: 'S/40'),
+                      TextSpan(text: precioLabel),
                       TextSpan(
-                        text: ' / hr',
+                        text: precioDesde != null ? ' / hr' : '',
                         style: GoogleFonts.plusJakartaSans(
                           fontSize: 11,
                           fontWeight: FontWeight.w400,
@@ -672,7 +706,7 @@ class _ComplexCard extends StatelessWidget {
                   ),
                 ),
                 ElevatedButton(
-                  onPressed: () => context.push('/complejo/${complejo.id}'),
+                  onPressed: onVerCanchas,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.acc,
                     foregroundColor: Colors.white,

@@ -75,10 +75,20 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       // ── Autenticado: leemos el perfil de Firestore ──────
       final perfilAsync = ref.read(perfilUsuarioProvider);
 
-      // Perfil aún cargando — ruta neutra para evitar flashear la UI de jugador
+      // Perfil aún sin datos (loading o error transitorio).
+      // IMPORTANTE: solo redirigir a /loading desde rutas públicas.
+      // Si ya estamos en una ruta de app (/inicio, /complejo/:id, etc.),
+      // NO redirigir — evita el loop:
+      //   /complejo/:id → /loading → (perfil recarga) → /inicio
+      // que hace que "Ver canchas" nunca llegue a destino.
       if (perfilAsync.asData == null) {
         debugPrint('[Router] auth=true · perfil cargando · loc=$loc');
-        return loc == '/loading' ? null : '/loading';
+        // Rutas públicas (auth): bloqueamos hasta tener perfil
+        if (isPublic) return '/loading';
+        // Ya en /loading: esperar
+        if (loc == '/loading') return null;
+        // En cualquier ruta de app: dejar pasar, la pantalla maneja su loading
+        return null;
       }
 
       final perfil = perfilAsync.asData!.value;
@@ -102,6 +112,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         if (!tieneComplejo && loc != '/admin/setup-complejo') {
           return '/admin/setup-complejo';
         }
+        // Rutas dev/seed siempre accesibles (para poblar BD de prueba)
+        if (loc.startsWith('/dev/')) return null;
         if (isPublic || !isAdminRoute) return '/admin/dashboard';
         return null;
       }
@@ -144,10 +156,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
 
       // ── Usuario · ShellRoute con bottom navigation ───────────
+      // Las rutas de detalle y reserva también viven aquí dentro para que
+      // el navigator del shell haga offstage correcto del mapa al navegar.
+      // UserShell oculta el bottom nav cuando la ruta no es un tab principal.
       ShellRoute(
         navigatorKey: _userShellNavigatorKey,
         builder: (_, _, child) => UserShell(child: child),
         routes: [
+          // ── Tabs principales (con bottom nav) ─────────────
           GoRoute(
             path: '/inicio',
             name: 'inicio',
@@ -168,56 +184,50 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             name: 'perfil',
             builder: (_, _) => const PerfilScreen(),
           ),
-        ],
-      ),
 
-      // ── Rutas usuario fuera del shell (pantallas completas) ─
-      GoRoute(
-        path: '/complejo/:complejoId',
-        name: 'complejoDetalle',
-        parentNavigatorKey: _rootNavigatorKey,
-        builder: (_, state) => ComplejoDetalleScreen(
-          complejoId: state.pathParameters['complejoId']!,
-        ),
-      ),
-      GoRoute(
-        path: '/reservar/:complejoId/:canchaId',
-        name: 'reservar',
-        parentNavigatorKey: _rootNavigatorKey,
-        builder: (_, state) => ReservarScreen(
-          complejoId: state.pathParameters['complejoId']!,
-          canchaId: state.pathParameters['canchaId']!,
-        ),
-      ),
-      GoRoute(
-        path: '/confirmacion/:reservaId',
-        name: 'confirmacion',
-        parentNavigatorKey: _rootNavigatorKey,
-        builder: (_, state) => ConfirmacionScreen(
-          reservaId: state.pathParameters['reservaId']!,
-        ),
-      ),
-      GoRoute(
-        path: '/crear-partido',
-        name: 'crearPartido',
-        parentNavigatorKey: _rootNavigatorKey,
-        builder: (_, _) => const CrearPartidoScreen(),
-      ),
-      GoRoute(
-        path: '/partido/:partidoId',
-        name: 'partidoLive',
-        parentNavigatorKey: _rootNavigatorKey,
-        builder: (_, state) => PartidoLiveScreen(
-          partidoId: state.pathParameters['partidoId']!,
-        ),
-      ),
-      GoRoute(
-        path: '/partido/:partidoId/completado',
-        name: 'partidoCompletado',
-        parentNavigatorKey: _rootNavigatorKey,
-        builder: (_, state) => PartidoCompletadoScreen(
-          partidoId: state.pathParameters['partidoId']!,
-        ),
+          // ── Pantallas de flujo usuario (sin bottom nav) ───
+          GoRoute(
+            path: '/complejo/:complejoId',
+            name: 'complejoDetalle',
+            builder: (_, state) => ComplejoDetalleScreen(
+              complejoId: state.pathParameters['complejoId']!,
+            ),
+          ),
+          GoRoute(
+            path: '/reservar/:complejoId/:canchaId',
+            name: 'reservar',
+            builder: (_, state) => ReservarScreen(
+              complejoId: state.pathParameters['complejoId']!,
+              canchaId: state.pathParameters['canchaId']!,
+            ),
+          ),
+          GoRoute(
+            path: '/confirmacion/:reservaId',
+            name: 'confirmacion',
+            builder: (_, state) => ConfirmacionScreen(
+              reservaId: state.pathParameters['reservaId']!,
+            ),
+          ),
+          GoRoute(
+            path: '/crear-partido',
+            name: 'crearPartido',
+            builder: (_, _) => const CrearPartidoScreen(),
+          ),
+          GoRoute(
+            path: '/partido/:partidoId',
+            name: 'partidoLive',
+            builder: (_, state) => PartidoLiveScreen(
+              partidoId: state.pathParameters['partidoId']!,
+            ),
+          ),
+          GoRoute(
+            path: '/partido/:partidoId/completado',
+            name: 'partidoCompletado',
+            builder: (_, state) => PartidoCompletadoScreen(
+              partidoId: state.pathParameters['partidoId']!,
+            ),
+          ),
+        ],
       ),
 
       // ── Seed / Setup inicial de base de datos ───────────────

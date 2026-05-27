@@ -6,9 +6,12 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 
+import '../../core/services/database_seeder.dart';
 import '../../core/theme/app_colors.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/complejos_provider.dart';
+import '../../providers/ingresos_provider.dart';
+import '../../providers/reservas_provider.dart';
 
 class AdminDashboardScreen extends ConsumerWidget {
   const AdminDashboardScreen({super.key});
@@ -156,77 +159,50 @@ class AdminDashboardScreen extends ConsumerWidget {
                 const SizedBox(height: 16),
               ],
 
-              // ── Stat cards ───────────────────────────
-              GridView.count(
-                crossAxisCount: 2,
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                crossAxisSpacing: 10,
-                mainAxisSpacing: 10,
-                childAspectRatio: 1.2,
-                children: const [
-                  _StatCard(
-                    icon: Icons.calendar_today_rounded,
-                    value: '24',
-                    label: 'Reservas hoy',
-                    delta: '↑ 18% vs ayer',
-                    deltaPositive: true,
-                  ),
-                  _StatCard(
-                    icon: Icons.attach_money_rounded,
-                    value: 'S/960',
-                    label: 'Ingresos hoy',
-                    delta: '↑ 24%',
-                    deltaPositive: true,
-                  ),
-                  _StatCard(
-                    icon: Icons.monitor_heart_outlined,
-                    value: '78%',
-                    label: 'Ocupación',
-                    delta: '↑ 8%',
-                    deltaPositive: true,
-                  ),
-                  _StatCard(
-                    icon: Icons.cancel_outlined,
-                    value: '2',
-                    label: 'Canceladas',
-                    delta: '↑ 1 hoy',
-                    deltaPositive: false,
-                  ),
-                ],
-              ),
+              // ── Stat cards (datos reales) ─────────────
+              if (complejoId != null)
+                _StatsGrid(complejoId: complejoId)
+              else
+                GridView.count(
+                  crossAxisCount: 2,
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  crossAxisSpacing: 10,
+                  mainAxisSpacing: 10,
+                  childAspectRatio: 1.2,
+                  children: const [
+                    _StatCard(icon: Icons.calendar_today_rounded, value: '—', label: 'Reservas hoy', delta: 'Sin complejo', deltaPositive: false),
+                    _StatCard(icon: Icons.attach_money_rounded,   value: '—', label: 'Ingresos mes', delta: 'Sin complejo', deltaPositive: false),
+                    _StatCard(icon: Icons.receipt_long_rounded,   value: '—', label: 'Ticket prom.', delta: 'Sin complejo', deltaPositive: false),
+                    _StatCard(icon: Icons.cancel_outlined,         value: '—', label: 'Cancelaciones', delta: 'Sin complejo', deltaPositive: false),
+                  ],
+                ),
 
               const SizedBox(height: 16),
 
               // ── Bar chart Predicción IA ──────────────
-              const _PrediccionCard(),
+              if (complejoId != null)
+                _PrediccionCard(complejoId: complejoId)
+              else
+                const _PrediccionCard(complejoId: null),
 
               const SizedBox(height: 16),
 
               // ── Donuts ───────────────────────────────
-              const Row(
-                children: [
-                  Expanded(
-                    child: _DonutCard(
-                      title: 'Ocupación',
-                      value: '78%',
-                      sub: 'hoy',
-                      color: AppColors.aacc,
-                      percent: 0.78,
-                    ),
-                  ),
-                  SizedBox(width: 10),
-                  Expanded(
-                    child: _DonutCard(
-                      title: 'Meta semanal',
-                      value: 'S/3,840',
-                      sub: 'de S/5,000',
-                      color: AppColors.ablu,
-                      percent: 0.768,
-                    ),
-                  ),
-                ],
-              ),
+              if (complejoId != null)
+                _DonutsRow(complejoId: complejoId)
+              else
+                const Row(
+                  children: [
+                    Expanded(child: _DonutCard(title: 'Ocupación', value: '—', sub: 'sin datos', color: AppColors.aacc, percent: 0)),
+                    SizedBox(width: 10),
+                    Expanded(child: _DonutCard(title: 'Ingresos mes', value: '—', sub: 'sin datos', color: AppColors.ablu, percent: 0)),
+                  ],
+                ),
+
+              // ── Herramientas Dev ─────────────────────
+              const SizedBox(height: 20),
+              _DevToolsCard(),
             ],
           ),
         ),
@@ -316,6 +292,170 @@ class _QuickActionsRow extends StatelessWidget {
 }
 
 // ═════════════════════════════════════════════════════
+//  Stats grid — datos reales de Firestore
+// ═════════════════════════════════════════════════════
+class _StatsGrid extends ConsumerWidget {
+  final String complejoId;
+  const _StatsGrid({required this.complejoId});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final statsAsync = ref.watch(ingresosStatsProvider(complejoId));
+    final hoy = DateTime.now();
+    final reservasHoyAsync = ref.watch(reservasComplejoFechaProvider(
+      (complejoId: complejoId, fecha: DateTime(hoy.year, hoy.month, hoy.day)),
+    ));
+
+    return statsAsync.when(
+      loading: () => GridView.count(
+        crossAxisCount: 2,
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        crossAxisSpacing: 10,
+        mainAxisSpacing: 10,
+        childAspectRatio: 1.2,
+        children: List.generate(4, (_) => const _StatCardLoading()),
+      ),
+      error: (_, _) => const SizedBox.shrink(),
+      data: (stats) {
+        final hoyReservas = reservasHoyAsync.asData?.value;
+        final reservasHoy =
+            hoyReservas?.where((r) => !r.estaCancelada).length ?? 0;
+        final ingresosHoy = hoyReservas
+                ?.where((r) => r.estaConfirmada)
+                .fold<double>(0, (s, r) => s + r.precioTotal) ??
+            0.0;
+
+        final varPct = stats.variacionPct;
+        final varLabel = varPct == 0
+            ? 'Sin historial'
+            : '${varPct > 0 ? "↑" : "↓"} ${varPct.abs().toStringAsFixed(0)}% vs mes ant.';
+
+        return GridView.count(
+          crossAxisCount: 2,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          crossAxisSpacing: 10,
+          mainAxisSpacing: 10,
+          childAspectRatio: 1.2,
+          children: [
+            _StatCard(
+              icon: Icons.calendar_today_rounded,
+              value: '$reservasHoy',
+              label: 'Reservas hoy',
+              delta: 'S/${ingresosHoy.toStringAsFixed(0)} hoy',
+              deltaPositive: ingresosHoy > 0,
+            ),
+            _StatCard(
+              icon: Icons.attach_money_rounded,
+              value: 'S/${_fmt(stats.totalMes)}',
+              label: 'Ingresos mes',
+              delta: varLabel,
+              deltaPositive: varPct >= 0,
+            ),
+            _StatCard(
+              icon: Icons.receipt_long_rounded,
+              value: 'S/${_fmt(stats.ticketPromedio)}',
+              label: 'Ticket prom.',
+              delta: stats.recientes.isEmpty ? 'Sin reservas' : '${stats.recientes.length} registradas',
+              deltaPositive: true,
+            ),
+            _StatCard(
+              icon: Icons.cancel_outlined,
+              value: '${stats.tasaCancelacionPct.toStringAsFixed(0)}%',
+              label: 'Cancelaciones',
+              delta: stats.tasaCancelacionPct < 10 ? 'Baja — bien' : 'Alta — revisar',
+              deltaPositive: stats.tasaCancelacionPct < 10,
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  static String _fmt(double v) {
+    if (v >= 1000) return '${(v / 1000).toStringAsFixed(1)}k';
+    return v.toStringAsFixed(0);
+  }
+}
+
+class _StatCardLoading extends StatelessWidget {
+  const _StatCardLoading();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.asur,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.abdr),
+      ),
+      child: const Center(
+        child: SizedBox(
+          width: 20,
+          height: 20,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            color: AppColors.aacc,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ═════════════════════════════════════════════════════
+//  Donuts row — datos reales
+// ═════════════════════════════════════════════════════
+class _DonutsRow extends ConsumerWidget {
+  final String complejoId;
+  const _DonutsRow({required this.complejoId});
+
+  static const double _metaMensual = 5000.0;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final ingresosAsync = ref.watch(ingresosStatsProvider(complejoId));
+    final ocupacionAsync = ref.watch(ocupacionStatsProvider(complejoId));
+
+    final totalMes = ingresosAsync.asData?.value.totalMes ?? 0.0;
+    final ocupPct = (ocupacionAsync.asData?.value.picoOcupacionPct ?? 0) / 100;
+
+    final metaPct = (_metaMensual > 0 ? totalMes / _metaMensual : 0.0).clamp(0.0, 1.0);
+
+    return Row(
+      children: [
+        Expanded(
+          child: _DonutCard(
+            title: 'Ocupación pico',
+            value: '${(ocupPct * 100).toStringAsFixed(0)}%',
+            sub: 'del periodo',
+            color: AppColors.aacc,
+            percent: ocupPct.clamp(0.0, 1.0),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: _DonutCard(
+            title: 'Meta mensual',
+            value: 'S/${_fmtK(totalMes)}',
+            sub: 'de S/${_fmtK(_metaMensual)}',
+            color: AppColors.ablu,
+            percent: metaPct,
+          ),
+        ),
+      ],
+    );
+  }
+
+  static String _fmtK(double v) {
+    if (v >= 1000) return '${(v / 1000).toStringAsFixed(1)}k';
+    return v.toStringAsFixed(0);
+  }
+}
+
+// ═════════════════════════════════════════════════════
 //  Stat card
 // ═════════════════════════════════════════════════════
 class _StatCard extends StatelessWidget {
@@ -390,15 +530,29 @@ class _StatCard extends StatelessWidget {
 // ═════════════════════════════════════════════════════
 //  Predicción IA — bar chart agrupado
 // ═════════════════════════════════════════════════════
-class _PrediccionCard extends StatelessWidget {
-  const _PrediccionCard();
+class _PrediccionCard extends ConsumerWidget {
+  final String? complejoId;
+  const _PrediccionCard({required this.complejoId});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final dias = ['Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sa', 'Do'];
-    // Datos sintéticos: real (ayer) vs predicción IA
-    final real = [12.0, 14.0, 11.0, 16.0, 22.0, 26.0, 18.0];
-    final pred = [13.0, 15.0, 12.0, 17.0, 24.0, 28.0, 20.0];
+
+    // Datos reales desde Firestore cuando hay complejoId
+    List<double> real;
+    if (complejoId != null) {
+      final stats = ref.watch(ingresosStatsProvider(complejoId!)).asData?.value;
+      real = stats?.ingresosPorDia ?? List.filled(7, 0.0);
+    } else {
+      real = List.filled(7, 0.0);
+    }
+
+    // Predicción IA simple: 10% más que el real (días futuros de la semana)
+    final hoyIdx = DateTime.now().weekday - 1; // 0=Lu, 6=Do
+    final pred = List.generate(7, (i) {
+      if (i <= hoyIdx) return real[i]; // días pasados: igual al real
+      return real[i] > 0 ? real[i] * 1.1 : real[hoyIdx > 0 ? hoyIdx - 1 : 0] * 1.1;
+    });
 
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
@@ -437,7 +591,8 @@ class _PrediccionCard extends StatelessWidget {
             child: BarChart(
               BarChartData(
                 alignment: BarChartAlignment.spaceAround,
-                maxY: 32,
+                maxY: ([...real, ...pred].reduce((a, b) => a > b ? a : b) * 1.2)
+                    .clamp(10.0, double.infinity),
                 barTouchData: BarTouchData(enabled: false),
                 titlesData: FlTitlesData(
                   leftTitles: const AxisTitles(
@@ -619,6 +774,136 @@ class _DonutCard extends StatelessWidget {
                   ],
                 ),
               ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ═════════════════════════════════════════════════════
+//  Dev Tools Card — visible para el dueño
+// ═════════════════════════════════════════════════════
+class _DevToolsCard extends StatefulWidget {
+  @override
+  State<_DevToolsCard> createState() => _DevToolsCardState();
+}
+
+class _DevToolsCardState extends State<_DevToolsCard> {
+  bool _checking = false;
+  bool? _seedOk;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkSeed();
+  }
+
+  Future<void> _checkSeed() async {
+    setState(() => _checking = true);
+    final ok = await DatabaseSeeder.yaEjecutado();
+    if (mounted) setState(() { _checking = false; _seedOk = ok; });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.asur,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: AppColors.aamber.withValues(alpha: 0.4),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Cabecera
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: AppColors.aamber.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.build_rounded,
+                    color: AppColors.aamber, size: 14),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Dev Tools',
+                style: GoogleFonts.bricolageGrotesque(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.aamber,
+                ),
+              ),
+              const Spacer(),
+              // Estado del seed
+              if (_checking)
+                const SizedBox(
+                  width: 12,
+                  height: 12,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: AppColors.aamber),
+                )
+              else
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      _seedOk == true
+                          ? Icons.check_circle_rounded
+                          : Icons.warning_rounded,
+                      size: 13,
+                      color: _seedOk == true
+                          ? AppColors.aacc
+                          : AppColors.ared,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      _seedOk == true ? 'Datos OK' : 'Sin datos',
+                      style: GoogleFonts.outfit(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: _seedOk == true
+                            ? AppColors.aacc
+                            : AppColors.ared,
+                      ),
+                    ),
+                  ],
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          // Botón Poblar base de datos
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: () async {
+                await context.push('/dev/seed');
+                // Al volver, refrescar el estado del seed
+                _checkSeed();
+              },
+              icon: const Icon(Icons.rocket_launch_rounded, size: 14),
+              label: Text(
+                'Poblar base de datos',
+                style: GoogleFonts.outfit(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.aamber,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
             ),
           ),
         ],

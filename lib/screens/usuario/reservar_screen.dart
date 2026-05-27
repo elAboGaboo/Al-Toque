@@ -9,6 +9,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/utils/app_date_utils.dart';
 import '../../models/cancha_model.dart';
 import '../../models/complejo_model.dart';
+import '../../models/reserva_model.dart';
 import '../../providers/complejos_provider.dart';
 import '../../providers/reservas_provider.dart';
 
@@ -27,9 +28,18 @@ class ReservarScreen extends ConsumerStatefulWidget {
 }
 
 class _ReservarScreenState extends ConsumerState<ReservarScreen> {
-  DateTime _fechaSeleccionada = DateTime.now();
+  late DateTime _fechaSeleccionada;
   String? _horaSeleccionada;
   String _metodoPago = 'yape';
+
+  @override
+  void initState() {
+    super.initState();
+    // Siempre normalizado a fecha-pura (sin componente de tiempo)
+    // para que la clave del provider sea estable durante el día.
+    final now = DateTime.now();
+    _fechaSeleccionada = DateTime(now.year, now.month, now.day);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -39,8 +49,17 @@ class _ReservarScreenState extends ConsumerState<ReservarScreen> {
         canchaId: widget.canchaId,
       )),
     );
-    final complejoAsync =
-        ref.watch(complejoFutureProvider(widget.complejoId));
+    final complejoAsync = ref.watch(complejoFutureProvider(widget.complejoId));
+
+    // ── Watch en el nivel de build — nunca dentro de métodos condicionales ──
+    final disponibilidadAsync = ref.watch(
+      disponibilidadProvider((
+        complejoId: widget.complejoId,
+        canchaId: widget.canchaId,
+        fecha: _fechaSeleccionada,
+      )),
+    );
+    final isLoading = ref.watch(reservaNotifierProvider).isLoading;
 
     return Scaffold(
       backgroundColor: AppColors.bg,
@@ -69,22 +88,27 @@ class _ReservarScreenState extends ConsumerState<ReservarScreen> {
       ),
       body: canchaAsync.when(
         loading: () =>
-            const Center(child: CircularProgressIndicator()),
+            const Center(child: CircularProgressIndicator(color: AppColors.acc)),
         error: (e, _) => Center(child: Text('Error: $e')),
         data: (cancha) {
           if (cancha == null) {
             return const Center(child: Text('Cancha no encontrada'));
           }
           return complejoAsync.when(
-            loading: () =>
-                const Center(child: CircularProgressIndicator()),
+            loading: () => const Center(
+                child: CircularProgressIndicator(color: AppColors.acc)),
             error: (e, _) => Center(child: Text('Error: $e')),
             data: (complejo) {
               if (complejo == null) {
-                return const Center(
-                    child: Text('Complejo no encontrado'));
+                return const Center(child: Text('Complejo no encontrado'));
               }
-              return _buildBody(context, cancha, complejo);
+              return _buildBody(
+                context,
+                cancha,
+                complejo,
+                disponibilidadAsync,
+                isLoading,
+              );
             },
           );
         },
@@ -93,22 +117,16 @@ class _ReservarScreenState extends ConsumerState<ReservarScreen> {
   }
 
   Widget _buildBody(
-      BuildContext context, CanchaModel cancha, ComplejoModel complejo) {
-    final disponibilidadAsync = ref.watch(
-      disponibilidadProvider((
-        complejoId: widget.complejoId,
-        canchaId: widget.canchaId,
-        fecha: _fechaSeleccionada,
-      )),
-    );
-
+    BuildContext context,
+    CanchaModel cancha,
+    ComplejoModel complejo,
+    AsyncValue<List<ReservaModel>> disponibilidadAsync,
+    bool isLoading,
+  ) {
     final slots = AppDateUtils.generarSlots(
       apertura: complejo.horarioApertura,
       cierre: complejo.horarioCierre,
     );
-
-    final reservaNotifier = ref.watch(reservaNotifierProvider);
-    final isLoading = reservaNotifier.isLoading;
 
     return Stack(
       children: [
@@ -127,7 +145,8 @@ class _ReservarScreenState extends ConsumerState<ReservarScreen> {
               _HorizontalCalendar(
                 selectedDate: _fechaSeleccionada,
                 onDateSelected: (d) => setState(() {
-                  _fechaSeleccionada = d;
+                  // Normalizar siempre al seleccionar
+                  _fechaSeleccionada = DateTime(d.year, d.month, d.day);
                   _horaSeleccionada = null;
                 }),
               ),
@@ -159,7 +178,8 @@ class _ReservarScreenState extends ConsumerState<ReservarScreen> {
               disponibilidadAsync.when(
                 loading: () => const Padding(
                   padding: EdgeInsets.all(20),
-                  child: Center(child: CircularProgressIndicator()),
+                  child: Center(
+                      child: CircularProgressIndicator(color: AppColors.acc)),
                 ),
                 error: (_, _) => Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -202,6 +222,7 @@ class _ReservarScreenState extends ConsumerState<ReservarScreen> {
           bottom: 0,
           child: _BookingSummary(
             selectedTime: _horaSeleccionada,
+            fecha: _fechaSeleccionada,
             precio: cancha.precioBase,
             metodoPago: _metodoPago,
             onMetodoPagoTap: _mostrarSelectorPago,
@@ -280,8 +301,7 @@ class _CanchaInfoBanner extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppColors.accLight,
         borderRadius: BorderRadius.circular(16),
-        border:
-            Border.all(color: AppColors.acc.withValues(alpha: 0.15)),
+        border: Border.all(color: AppColors.acc.withValues(alpha: 0.15)),
       ),
       child: Row(
         children: [
@@ -383,6 +403,9 @@ class _HorizontalCalendar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
+    // Base normalizada para que los días generados sean fecha-pura
+    final hoy = DateTime(now.year, now.month, now.day);
+
     return SizedBox(
       height: 85,
       child: ListView.separated(
@@ -391,7 +414,7 @@ class _HorizontalCalendar extends StatelessWidget {
         itemCount: 14,
         separatorBuilder: (_, _) => const SizedBox(width: 8),
         itemBuilder: (context, i) {
-          final date = now.add(Duration(days: i));
+          final date = hoy.add(Duration(days: i)); // fecha normalizada
           final isSelected = date.day == selectedDate.day &&
               date.month == selectedDate.month &&
               date.year == selectedDate.year;
@@ -407,8 +430,7 @@ class _HorizontalCalendar extends StatelessWidget {
                 color: isSelected ? AppColors.tx : AppColors.sur,
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(
-                    color:
-                        isSelected ? AppColors.tx : AppColors.bdr2),
+                    color: isSelected ? AppColors.tx : AppColors.bdr2),
               ),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -431,8 +453,7 @@ class _HorizontalCalendar extends StatelessWidget {
                     style: GoogleFonts.bricolageGrotesque(
                       fontSize: 18,
                       fontWeight: FontWeight.w700,
-                      color:
-                          isSelected ? Colors.white : AppColors.tx,
+                      color: isSelected ? Colors.white : AppColors.tx,
                     ),
                   ),
                 ],
@@ -455,8 +476,7 @@ class _AISuggestionBanner extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppColors.acc.withValues(alpha: 0.05),
         borderRadius: BorderRadius.circular(20),
-        border:
-            Border.all(color: AppColors.acc.withValues(alpha: 0.1)),
+        border: Border.all(color: AppColors.acc.withValues(alpha: 0.1)),
       ),
       child: Row(
         children: [
@@ -519,7 +539,11 @@ class _TimeSlotsGrid extends StatelessWidget {
     final now = DateTime.now();
     final hoy = DateTime(now.year, now.month, now.day);
     final dia = DateTime(fecha.year, fecha.month, fecha.day);
+    // Día futuro → nunca pasado
     if (dia.isAfter(hoy)) return false;
+    // Día pasado → todos los slots ya pasaron
+    if (dia.isBefore(hoy)) return true;
+    // Mismo día → comparar hora
     final hora = int.parse(slot.split(':')[0]);
     return hora <= now.hour;
   }
@@ -532,6 +556,9 @@ class _TimeSlotsGrid extends StatelessWidget {
             style: GoogleFonts.plusJakartaSans(color: AppColors.tx3)),
       );
     }
+
+    // Ancho de cada celda: descuenta 2×20 padding exterior + 2×10 de spacing
+    final slotWidth = (MediaQuery.of(context).size.width - 60) / 3;
 
     return Wrap(
       spacing: 10,
@@ -573,7 +600,7 @@ class _TimeSlotsGrid extends StatelessWidget {
           onTap: isDisponible ? () => onTimeSelected(slot) : null,
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 200),
-            width: (MediaQuery.of(context).size.width - 50) / 3,
+            width: slotWidth,
             padding: const EdgeInsets.symmetric(vertical: 14),
             decoration: BoxDecoration(
               color: bgColor,
@@ -614,6 +641,7 @@ class _TimeSlotsGrid extends StatelessWidget {
 
 class _BookingSummary extends StatelessWidget {
   final String? selectedTime;
+  final DateTime fecha;
   final double precio;
   final String metodoPago;
   final VoidCallback onMetodoPagoTap;
@@ -622,6 +650,7 @@ class _BookingSummary extends StatelessWidget {
 
   const _BookingSummary({
     required this.selectedTime,
+    required this.fecha,
     required this.precio,
     required this.metodoPago,
     required this.onMetodoPagoTap,
@@ -637,6 +666,13 @@ class _BookingSummary extends StatelessWidget {
       'tarjeta': '💳 Tarjeta',
     };
     return m[metodoPago] ?? metodoPago;
+  }
+
+  String _horaFin(String horaInicio) {
+    final parts = horaInicio.split(':');
+    final hora = int.parse(parts[0]) + 1;
+    final hf = hora > 23 ? 23 : hora;
+    return '${hf.toString().padLeft(2, '0')}:${parts[1]}';
   }
 
   @override
@@ -657,7 +693,54 @@ class _BookingSummary extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          // ── Resumen de reserva (visible cuando hay hora seleccionada) ──
           if (selectedTime != null) ...[
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              margin: const EdgeInsets.only(bottom: 10),
+              decoration: BoxDecoration(
+                color: AppColors.accLight,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                    color: AppColors.acc.withValues(alpha: 0.2)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.event_available_rounded,
+                      size: 14, color: AppColors.acc),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      AppDateUtils.formatearFechaLarga(fecha),
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.tx,
+                      ),
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: AppColors.acc,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      '$selectedTime – ${_horaFin(selectedTime!)}',
+                      style: GoogleFonts.bricolageGrotesque(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // ── Método de pago ──
             GestureDetector(
               onTap: onMetodoPagoTap,
               child: Container(
@@ -688,6 +771,8 @@ class _BookingSummary extends StatelessWidget {
               ),
             ),
           ],
+
+          // ── Total + botón ──────────────────────────────────
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -711,13 +796,20 @@ class _BookingSummary extends StatelessWidget {
                 ],
               ),
               ElevatedButton(
-                onPressed: (selectedTime != null && !isLoading)
-                    ? onConfirm
-                    : null,
+                onPressed:
+                    (selectedTime != null && !isLoading) ? onConfirm : null,
                 style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.acc,
+                  foregroundColor: Colors.white,
+                  disabledBackgroundColor:
+                      AppColors.acc.withValues(alpha: 0.4),
                   padding: const EdgeInsets.symmetric(
                       horizontal: 28, vertical: 16),
                   minimumSize: Size.zero,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  elevation: 0,
                 ),
                 child: isLoading
                     ? const SizedBox(
@@ -726,7 +818,13 @@ class _BookingSummary extends StatelessWidget {
                         child: CircularProgressIndicator(
                             color: Colors.white, strokeWidth: 2),
                       )
-                    : const Text('Confirmar Reserva'),
+                    : Text(
+                        'Confirmar Reserva',
+                        style: GoogleFonts.outfit(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
               ),
             ],
           ),
@@ -792,18 +890,15 @@ class _MetodoPagoSheet extends StatelessWidget {
                 ),
                 child: Row(
                   children: [
-                    Text(emoji,
-                        style: const TextStyle(fontSize: 20)),
+                    Text(emoji, style: const TextStyle(fontSize: 20)),
                     const SizedBox(width: 14),
                     Text(
                       label,
                       style: GoogleFonts.plusJakartaSans(
                         fontSize: 15,
-                        fontWeight: isSel
-                            ? FontWeight.w600
-                            : FontWeight.w400,
-                        color:
-                            isSel ? AppColors.acc : AppColors.tx,
+                        fontWeight:
+                            isSel ? FontWeight.w600 : FontWeight.w400,
+                        color: isSel ? AppColors.acc : AppColors.tx,
                       ),
                     ),
                     if (isSel) ...[

@@ -21,16 +21,27 @@ final complejoProvider =
   return ref.watch(complejosRepositoryProvider).streamComplejo(complejoId);
 });
 
-/// Stream de canchas de un complejo.
+/// Stream de canchas de un complejo (tiempo real).
 final canchasProvider =
     StreamProvider.family<List<CanchaModel>, String>((ref, complejoId) {
   return ref.watch(complejosRepositoryProvider).streamCanchas(complejoId);
+});
+
+/// One-shot fetch de canchas — usa .get() en lugar de .snapshots().
+/// Resuelve inmediatamente o lanza error explícito (nunca queda colgado).
+final canchasFutureProvider =
+    FutureProvider.family<List<CanchaModel>, String>((ref, complejoId) {
+  return ref.watch(complejosRepositoryProvider).getCanchas(complejoId);
 });
 
 /// Complejo seleccionado en el mapa (para bottom sheet detalle).
 class ComplejoSeleccionadoNotifier extends Notifier<ComplejoModel?> {
   @override
   ComplejoModel? build() => null;
+
+  /// Llama esto ANTES de navegar a /complejo/:id para que la pantalla de
+  /// detalle muestre el header inmediatamente sin llamada extra a Firestore.
+  void select(ComplejoModel? complejo) => state = complejo;
 }
 
 final complejoSeleccionadoProvider =
@@ -72,19 +83,19 @@ final canchasAdminProvider =
       .streamCanchasAdmin(complejoId);
 });
 
-/// Stream de todos los complejos del admin logueado
+/// Stream del complejo del dueño logueado (uno solo).
 final misComplejosProvider = StreamProvider<List<ComplejoModel>>((ref) {
   final perfil = ref.watch(perfilUsuarioProvider);
-  final complejosIds = perfil.asData?.value?.complejosIds ?? [];
+  final complejoId = perfil.asData?.value?.complejoId;
 
-  if (complejosIds.isEmpty) {
+  if (complejoId == null || complejoId.isEmpty) {
     return Stream.value([]);
   }
 
   return ref
       .watch(complejosRepositoryProvider)
-      .streamComplejos()
-      .map((todos) => todos.where((c) => complejosIds.contains(c.id)).toList());
+      .streamComplejo(complejoId)
+      .map((c) => c != null ? [c] : <ComplejoModel>[]);
 });
 
 /// Notifier para invalidar canchas cuando se crea/edita una

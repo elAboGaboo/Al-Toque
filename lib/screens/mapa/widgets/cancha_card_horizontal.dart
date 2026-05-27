@@ -94,7 +94,7 @@ class CanchaCardHorizontal extends StatelessWidget {
                           size: 11, color: AppColors.flashPin),
                       const SizedBox(width: 2),
                       Text(
-                        complejo.rating.toStringAsFixed(1),
+                        complejo.ciudad,
                         style: GoogleFonts.outfit(
                             fontSize: 11,
                             color: AppColors.ink.withValues(alpha: 0.55)),
@@ -109,7 +109,7 @@ class CanchaCardHorizontal extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Desde S/${(complejo.rating * 0 + 40 * multiplicador).toStringAsFixed(0)}',
+                            'Desde S/${(40 * multiplicador).toStringAsFixed(0)}',
                             style: GoogleFonts.outfit(
                               fontSize: 13,
                               fontWeight: FontWeight.w700,

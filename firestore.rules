@@ -1,28 +1,19 @@
 rules_version = '2';
 
-// ─────────────────────────────────────────────────────────────────
-//  Al Toque · Reglas de Firestore
-//  Roles: jugador | dueno  (antes era admin → ahora es dueno)
-// ─────────────────────────────────────────────────────────────────
-
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ── Helpers ────────────────────────────────────────────────
     function isAuthed() {
       return request.auth != null;
     }
-
     function isOwner(uid) {
       return isAuthed() && request.auth.uid == uid;
     }
-
     function isDueno() {
       return isAuthed() &&
         exists(/databases/$(database)/documents/usuarios/$(request.auth.uid)) &&
         get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.rol == 'dueno';
     }
-
     function isDuenoDeComplejo(complejoId) {
       return isAuthed() &&
         exists(/databases/$(database)/documents/usuarios/$(request.auth.uid)) &&
@@ -33,57 +24,69 @@ service cloud.firestore {
     // ── Usuarios ───────────────────────────────────────────────
     match /usuarios/{uid} {
       allow read: if isAuthed();
-      // Crear perfil: jugador o dueno
-      allow create: if isOwner(uid)
-        && request.resource.data.rol in ['jugador', 'dueno'];
-      // Actualizar: solo el dueño del doc, sin cambiar rol
+      // Registro normal propio + creación de usuarios demo por cualquier dueño
+      allow create: if (isOwner(uid) && request.resource.data.rol in ['jugador', 'dueno'])
+        || (isDueno() && request.resource.data.esDemo == true);
+      // Perfil propio (sin restricción de rol para poder corregirlo en seeder)
+      // + dueño puede sobreescribir usuarios demo (re-seed sin limpiar)
       allow update: if isOwner(uid)
-        && request.resource.data.rol == resource.data.rol;
-      allow delete: if false;
+        || (isDueno() && resource.data.esDemo == true);
+      // Propietario puede borrarse a sí mismo; dueño puede borrar usuarios demo
+      allow delete: if isOwner(uid)
+        || (isDueno() && resource.data.esDemo == true);
     }
 
     // ── Complejos ──────────────────────────────────────────────
     match /complejos/{complejoId} {
-      // Lectura pública: aparecen en el mapa y la lista del jugador
       allow read: if true;
-      // Crear: solo dueños autenticados
       allow create: if isDueno();
-      // Actualizar/eliminar: solo el dueño asignado a ese complejo
-      allow update, delete: if isDuenoDeComplejo(complejoId);
+      // El dueño del complejo puede actualizar el suyo
+      // + cualquier dueño puede sobreescribir complejos demo (re-seed sin limpiar)
+      allow update: if isDuenoDeComplejo(complejoId)
+        || (isDueno() && resource.data.esDemo == true);
+      allow delete: if isDuenoDeComplejo(complejoId)
+        || (isDueno() && (
+          resource.data.duenoUid == '' ||
+          resource.data.duenoUid == request.auth.uid ||
+          resource.data.esDemo == true
+        ));
 
-      // Sub-colección: canchas
       match /canchas/{canchaId} {
         allow read: if true;
-        // El dueño del complejo puede gestionar sus canchas.
-        // Un dueño también puede crear canchas en complejos sin dueño
-        // (necesario para el seeder de datos de demostración).
+        // El dueño del complejo puede gestionarlo.
+        // Cualquier dueño puede escribir canchas en complejos demo (esDemo == true).
         allow write: if isDuenoDeComplejo(complejoId) ||
-          (isDueno() &&
-           get(/databases/$(database)/documents/complejos/$(complejoId)).data.duenoUid == '');
+          (isDueno() && (
+            get(/databases/$(database)/documents/complejos/$(complejoId)).data.duenoUid == '' ||
+            get(/databases/$(database)/documents/complejos/$(complejoId)).data.duenoUid == request.auth.uid ||
+            get(/databases/$(database)/documents/complejos/$(complejoId)).data.esDemo == true
+          ));
       }
     }
 
     // ── Reservas ───────────────────────────────────────────────
     match /reservas/{reservaId} {
-      allow read: if isAuthed() && (
-        resource.data.userId == request.auth.uid ||
-        isDuenoDeComplejo(resource.data.complejoId)
-      );
-      allow create: if isAuthed()
-        && request.resource.data.userId == request.auth.uid
-        && request.resource.data.estado in ['pendiente', 'confirmada'];
+      // Cualquier usuario autenticado puede leer reservas.
+      // Necesario para queries de disponibilidad (ver qué horarios están ocupados).
+      allow read: if isAuthed();
+      // Reserva normal propia + reservas demo creadas por cualquier dueño
+      allow create: if (isAuthed()
+          && request.resource.data.userId == request.auth.uid
+          && request.resource.data.estado in ['pendiente', 'confirmada'])
+        || (isDueno() && request.resource.data.esDemo == true);
       allow update: if isAuthed() && (
         resource.data.userId == request.auth.uid ||
         isDuenoDeComplejo(resource.data.complejoId)
       );
-      allow delete: if isDuenoDeComplejo(resource.data.complejoId);
+      allow delete: if isDuenoDeComplejo(resource.data.complejoId) || isDueno();
     }
 
     // ── Partidos ───────────────────────────────────────────────
     match /partidos/{partidoId} {
       allow read: if isAuthed();
-      allow create: if isAuthed()
-        && request.resource.data.organizadorId == request.auth.uid;
+      // Partido propio + partidos demo creados por cualquier dueño
+      allow create: if (isAuthed() && request.resource.data.organizadorId == request.auth.uid)
+        || (isDueno() && request.resource.data.esDemo == true);
       allow update: if isAuthed();
       allow delete: if isAuthed() && (
         resource.data.organizadorId == request.auth.uid || isDueno()
@@ -93,7 +96,12 @@ service cloud.firestore {
     // ── Flash Slots ────────────────────────────────────────────
     match /flashSlots/{slotId} {
       allow read: if isAuthed();
-      allow write: if isDuenoDeComplejo(resource.data.complejoId);
+      // Slot del complejo propio + flash slots demo creados por cualquier dueño
+      allow create, update: if (isDueno()
+          && request.resource.data.complejoId != null
+          && isDuenoDeComplejo(request.resource.data.complejoId))
+        || (isDueno() && request.resource.data.esDemo == true);
+      allow delete: if isDuenoDeComplejo(resource.data.complejoId) || isDueno();
     }
 
     // ── Predicciones IA ────────────────────────────────────────
@@ -105,10 +113,11 @@ service cloud.firestore {
     // ── Reseñas ────────────────────────────────────────────────
     match /resenas/{resenaId} {
       allow read: if true;
-      allow create: if isAuthed()
-        && request.resource.data.userId == request.auth.uid;
+      // Reseña propia + reseñas demo creadas por cualquier dueño
+      allow create: if (isAuthed() && request.resource.data.userId == request.auth.uid)
+        || (isDueno() && request.resource.data.esDemo == true);
       allow update: if isDuenoDeComplejo(resource.data.complejoId);
-      allow delete: if false;
+      allow delete: if isDueno();
     }
   }
 }

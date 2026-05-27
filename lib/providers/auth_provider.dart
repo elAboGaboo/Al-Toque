@@ -67,6 +67,7 @@ class AuthNotifier extends AsyncNotifier<void> {
     required String email,
     required String password,
     String rol = 'jugador',
+    String dni = '',
   }) async {
     state = const AsyncLoading();
     String? uid;
@@ -82,6 +83,7 @@ class AuthNotifier extends AsyncNotifier<void> {
               nombre: nombre,
               email: email.trim(),
               rol: rol,
+              dni: dni,
             );
       } catch (_) {
         await cred.user!.delete();

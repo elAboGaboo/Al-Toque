@@ -65,8 +65,6 @@ class ReservaNotifier extends AsyncNotifier<ReservaModel?> {
     required double duracionHoras,
     required double precioTotal,
     required String metodoPago,
-    String tipo = 'normal',
-    String? flashSlotId,
     String? partidoId,
   }) async {
     state = const AsyncLoading();
@@ -88,8 +86,6 @@ class ReservaNotifier extends AsyncNotifier<ReservaModel?> {
       duracionHoras: duracionHoras,
       precioTotal: precioTotal,
       estado: 'confirmada',
-      tipo: tipo,
-      flashSlotId: flashSlotId,
       partidoId: partidoId,
       metodoPago: metodoPago,
       codigoAcceso: codigoAcceso,

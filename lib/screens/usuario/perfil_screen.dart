@@ -1,13 +1,15 @@
 // screens/usuario/perfil_screen.dart
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
-
 import 'package:go_router/go_router.dart';
 
 import '../../core/theme/app_colors.dart';
+import '../../models/complejo_model.dart';
 import '../../models/usuario_model.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/complejos_provider.dart';
 
 class PerfilScreen extends ConsumerWidget {
   const PerfilScreen({super.key});
@@ -35,23 +37,148 @@ class PerfilScreen extends ConsumerWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// JUGADOR — diseño con header verde oscuro + cuerpo claro
+// JUGADOR — header verde oscuro + cuerpo claro + edición inline
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _JugadorPerfil extends ConsumerWidget {
+class _JugadorPerfil extends ConsumerStatefulWidget {
   final UsuarioModel perfil;
   const _JugadorPerfil({required this.perfil});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_JugadorPerfil> createState() => _JugadorPerfilState();
+}
+
+class _JugadorPerfilState extends ConsumerState<_JugadorPerfil> {
+  bool _guardando = false;
+
+  // ── Bottom-sheet de edición ──────────────────────────────────────────────
+  Future<String?> _editarCampo({
+    required String label,
+    required String valorActual,
+    TextInputType keyboardType = TextInputType.text,
+    int? maxLength,
+    List<TextInputFormatter>? inputFormatters,
+    String? Function(String?)? validator,
+  }) async {
+    final ctrl = TextEditingController(text: valorActual);
+    final formKey = GlobalKey<FormState>();
+
+    final resultado = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(ctx).viewInsets.bottom,
+        ),
+        child: Container(
+          decoration: const BoxDecoration(
+            color: AppColors.bg,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          padding: const EdgeInsets.fromLTRB(24, 20, 24, 36),
+          child: Form(
+            key: formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Handle
+                Center(
+                  child: Container(
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: AppColors.tx3,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  'Editar $label',
+                  style: GoogleFonts.bricolageGrotesque(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.tx,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: ctrl,
+                  autofocus: true,
+                  keyboardType: keyboardType,
+                  maxLength: maxLength,
+                  inputFormatters: inputFormatters,
+                  textCapitalization: keyboardType == TextInputType.name
+                      ? TextCapitalization.words
+                      : TextCapitalization.none,
+                  decoration: InputDecoration(
+                    labelText: label,
+                    counterText: '',
+                    labelStyle: GoogleFonts.outfit(
+                        color: AppColors.tx.withValues(alpha: 0.5)),
+                    prefixIcon: const Icon(
+                      Icons.edit_outlined,
+                      color: AppColors.acc,
+                      size: 18,
+                    ),
+                  ),
+                  validator: validator,
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      if (formKey.currentState!.validate()) {
+                        Navigator.of(ctx).pop(ctrl.text.trim());
+                      }
+                    },
+                    child: Text(
+                      'Guardar',
+                      style: GoogleFonts.outfit(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    ctrl.dispose();
+    return resultado;
+  }
+
+  Future<void> _guardar(UsuarioModel nuevo) async {
+    setState(() => _guardando = true);
+    try {
+      await ref.read(usuariosRepositoryProvider).guardarUsuario(nuevo);
+    } finally {
+      if (mounted) setState(() => _guardando = false);
+    }
+  }
+
+  // ── Build ────────────────────────────────────────────────────────────────
+  @override
+  Widget build(BuildContext context) {
+    // Perfil en tiempo real (stream actualiza cuando guardamos)
+    final perfilLive =
+        ref.watch(perfilUsuarioProvider).asData?.value ?? widget.perfil;
+
     return Scaffold(
       backgroundColor: AppColors.bg,
       body: Column(
         children: [
           // ── Header verde oscuro ──────────────────────────────
-          _Header(perfil: perfil),
+          _JugadorHeader(perfil: perfilLive),
 
-          // ── Cuerpo blanco/crema ──────────────────────────────
+          // ── Cuerpo ──────────────────────────────────────────
           Expanded(
             child: SingleChildScrollView(
               child: Padding(
@@ -59,6 +186,7 @@ class _JugadorPerfil extends ConsumerWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // ── Sección perfil ─────────────────────
                     Text(
                       'Mi perfil',
                       style: GoogleFonts.bricolageGrotesque(
@@ -69,46 +197,139 @@ class _JugadorPerfil extends ConsumerWidget {
                     ),
                     const SizedBox(height: 16),
 
-                    // Deporte favorito
+                    // Nombre completo
+                    _PerfilTile(
+                      iconBg: const Color(0xFFEBFFEF),
+                      iconColor: AppColors.acc,
+                      icon: Icons.person_outline_rounded,
+                      label: 'Nombre completo',
+                      value: perfilLive.nombre,
+                      onTap: _guardando
+                          ? null
+                          : () async {
+                              final nuevo = await _editarCampo(
+                                label: 'Nombre completo',
+                                valorActual: perfilLive.nombre,
+                                keyboardType: TextInputType.name,
+                                validator: (v) {
+                                  if (v == null || v.trim().isEmpty) {
+                                    return 'Ingresa tu nombre';
+                                  }
+                                  if (v.trim().length < 3) {
+                                    return 'Nombre muy corto';
+                                  }
+                                  return null;
+                                },
+                              );
+                              if (nuevo != null &&
+                                  nuevo != perfilLive.nombre) {
+                                final iniciales = nuevo
+                                    .split(' ')
+                                    .where((w) => w.isNotEmpty)
+                                    .take(2)
+                                    .map((w) => w[0].toUpperCase())
+                                    .join();
+                                await _guardar(perfilLive.copyWith(
+                                  nombre: nuevo,
+                                  iniciales: iniciales,
+                                ));
+                              }
+                            },
+                    ),
+
+                    // Teléfono
                     _PerfilTile(
                       iconBg: const Color(0xFFEBF5FF),
                       iconColor: const Color(0xFF3B82F6),
-                      icon: Icons.sports_soccer_rounded,
-                      label: 'Deporte favorito',
-                      value:
-                          '${_deporteLabel(perfil.deporteFavorito)} · ${perfil.totalReservas} reservas',
+                      icon: Icons.phone_rounded,
+                      label: 'Teléfono',
+                      value: perfilLive.telefono.isEmpty
+                          ? '—'
+                          : perfilLive.telefono,
+                      onTap: _guardando
+                          ? null
+                          : () async {
+                              final nuevo = await _editarCampo(
+                                label: 'Teléfono',
+                                valorActual: perfilLive.telefono,
+                                keyboardType: TextInputType.phone,
+                                maxLength: 12,
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.digitsOnly,
+                                ],
+                              );
+                              if (nuevo != null &&
+                                  nuevo != perfilLive.telefono) {
+                                await _guardar(
+                                    perfilLive.copyWith(telefono: nuevo));
+                              }
+                            },
                     ),
 
-                    // Método de pago (placeholder)
-                    const _PerfilTile(
-                      iconBg: Color(0xFFFFF3E0),
-                      iconColor: Color(0xFFE67E22),
-                      icon: Icons.credit_card_rounded,
-                      label: 'Método de pago',
-                      value: 'Yape · **** 4821',
-                    ),
-
-                    // Total gastado
+                    // DNI
                     _PerfilTile(
-                      iconBg: const Color(0xFFE8F5E9),
-                      iconColor: AppColors.acc,
-                      icon: Icons.attach_money_rounded,
-                      label: 'Total invertido',
-                      value: 'S/${perfil.totalGastado.toStringAsFixed(0)}',
+                      iconBg: const Color(0xFFFFF3E0),
+                      iconColor: const Color(0xFFE67E22),
+                      icon: Icons.badge_outlined,
+                      label: 'DNI',
+                      value:
+                          perfilLive.dni.isEmpty ? '—' : perfilLive.dni,
+                      onTap: _guardando
+                          ? null
+                          : () async {
+                              final nuevo = await _editarCampo(
+                                label: 'DNI',
+                                valorActual: perfilLive.dni,
+                                keyboardType: TextInputType.number,
+                                maxLength: 8,
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.digitsOnly,
+                                ],
+                                validator: (v) {
+                                  if (v == null || v.trim().isEmpty) {
+                                    return 'Ingresa tu DNI';
+                                  }
+                                  if (v.trim().length != 8) {
+                                    return '8 dígitos requeridos';
+                                  }
+                                  return null;
+                                },
+                              );
+                              if (nuevo != null &&
+                                  nuevo != perfilLive.dni) {
+                                await _guardar(
+                                    perfilLive.copyWith(dni: nuevo));
+                              }
+                            },
                     ),
 
-                    // Email
+                    // Correo (solo lectura)
                     _PerfilTile(
                       iconBg: const Color(0xFFF3E8FF),
                       iconColor: const Color(0xFF7C3AED),
                       icon: Icons.email_outlined,
                       label: 'Correo electrónico',
-                      value: perfil.email,
+                      value: perfilLive.email,
                     ),
 
                     const SizedBox(height: 32),
 
-                    // Setup base de datos (solo desarrollo)
+                    // ── Complejos disponibles ───────────────
+                    Text(
+                      'Complejos disponibles',
+                      style: GoogleFonts.bricolageGrotesque(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.tx,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    _ComplejosSection(),
+
+                    const SizedBox(height: 32),
+
+                    // Setup BD (solo desarrollo)
                     Center(
                       child: TextButton.icon(
                         onPressed: () => context.push('/dev/seed'),
@@ -128,8 +349,9 @@ class _JugadorPerfil extends ConsumerWidget {
                     // Logout
                     Center(
                       child: TextButton(
-                        onPressed: () =>
-                            ref.read(authNotifierProvider.notifier).logout(),
+                        onPressed: () => ref
+                            .read(authNotifierProvider.notifier)
+                            .logout(),
                         child: Text(
                           'Cerrar Sesión',
                           style: GoogleFonts.outfit(
@@ -149,34 +371,15 @@ class _JugadorPerfil extends ConsumerWidget {
       ),
     );
   }
-
-  String _deporteLabel(String deporte) {
-    return switch (deporte) {
-      'futbol5' => 'Fútbol 5',
-      'futbol7' => 'Fútbol 7',
-      'futbol11' => 'Fútbol 11',
-      'fulbito' => 'Fulbito',
-      'basquet' => 'Básquet',
-      'voley' => 'Vóley',
-      'tenis' => 'Tenis',
-      'padel' => 'Pádel',
-      _ => deporte,
-    };
-  }
 }
 
-class _Header extends StatelessWidget {
+// ─── Header jugador ──────────────────────────────────────────────────────────
+
+class _JugadorHeader extends StatelessWidget {
   final UsuarioModel perfil;
-  const _Header({required this.perfil});
+  const _JugadorHeader({required this.perfil});
 
   static const _headerBg = Color(0xFF0F2419);
-
-  String _nivelLabel(int r) {
-    if (r >= 20) return 'MVP';
-    if (r >= 10) return 'Pro';
-    if (r >= 5) return 'Semi';
-    return 'Rookie';
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -195,7 +398,7 @@ class _Header extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(24, 24, 24, 28),
           child: Column(
             children: [
-              // Avatar cuadrado redondeado
+              // Avatar
               Container(
                 width: 76,
                 height: 76,
@@ -247,27 +450,24 @@ class _Header extends StatelessWidget {
 
               const SizedBox(height: 24),
 
-              // Stats row
+              // Stats row: DNI | Teléfono
               Row(
                 children: [
                   Expanded(
                     child: _HeaderStat(
-                      val: '${perfil.totalReservas}',
-                      label: 'Reservas',
+                      val: perfil.dni.isEmpty ? '—' : perfil.dni,
+                      label: 'DNI',
+                      fontSize: perfil.dni.isEmpty ? 20 : 17,
                     ),
                   ),
                   _StatDivider(),
                   Expanded(
                     child: _HeaderStat(
-                      val: _nivelLabel(perfil.totalReservas),
-                      label: 'Nivel',
-                    ),
-                  ),
-                  _StatDivider(),
-                  Expanded(
-                    child: _HeaderStat(
-                      val: 'S/${perfil.totalGastado.toStringAsFixed(0)}',
-                      label: 'Total',
+                      val: perfil.telefono.isEmpty
+                          ? '—'
+                          : perfil.telefono,
+                      label: 'Teléfono',
+                      fontSize: perfil.telefono.isEmpty ? 20 : 15,
                     ),
                   ),
                 ],
@@ -294,7 +494,12 @@ class _StatDivider extends StatelessWidget {
 class _HeaderStat extends StatelessWidget {
   final String val;
   final String label;
-  const _HeaderStat({required this.val, required this.label});
+  final double fontSize;
+  const _HeaderStat({
+    required this.val,
+    required this.label,
+    this.fontSize = 20,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -303,7 +508,7 @@ class _HeaderStat extends StatelessWidget {
         Text(
           val,
           style: GoogleFonts.bricolageGrotesque(
-            fontSize: 20,
+            fontSize: fontSize,
             fontWeight: FontWeight.w700,
             color: Colors.white,
           ),
@@ -321,12 +526,15 @@ class _HeaderStat extends StatelessWidget {
   }
 }
 
+// ─── Tile editable ───────────────────────────────────────────────────────────
+
 class _PerfilTile extends StatelessWidget {
   final Color iconBg;
   final Color iconColor;
   final IconData icon;
   final String label;
   final String value;
+  final VoidCallback? onTap;
 
   const _PerfilTile({
     required this.iconBg,
@@ -334,6 +542,7 @@ class _PerfilTile extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.value,
+    this.onTap,
   });
 
   @override
@@ -341,7 +550,9 @@ class _PerfilTile extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.only(bottom: 2),
       child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+        onTap: onTap,
         leading: Container(
           width: 42,
           height: 42,
@@ -360,7 +571,8 @@ class _PerfilTile extends StatelessWidget {
         ),
         subtitle: Container(
           margin: const EdgeInsets.only(top: 4),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          padding:
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
           decoration: BoxDecoration(
             color: const Color(0xFF0F2419),
             borderRadius: BorderRadius.circular(10),
@@ -374,11 +586,184 @@ class _PerfilTile extends StatelessWidget {
             ),
           ),
         ),
-        trailing: const Icon(
-          Icons.arrow_forward_ios_rounded,
-          size: 14,
-          color: AppColors.tx3,
+        trailing: onTap != null
+            ? const Icon(Icons.edit_outlined,
+                size: 16, color: AppColors.acc)
+            : const Icon(Icons.lock_outline_rounded,
+                size: 14, color: AppColors.tx3),
+      ),
+    );
+  }
+}
+
+// ─── Sección complejos ───────────────────────────────────────────────────────
+
+class _ComplejosSection extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final complejosAsync = ref.watch(complejosProvider);
+
+    return complejosAsync.when(
+      loading: () => const Center(
+        child: Padding(
+          padding: EdgeInsets.symmetric(vertical: 24),
+          child: CircularProgressIndicator(
+            color: AppColors.acc,
+            strokeWidth: 2,
+          ),
         ),
+      ),
+      error: (e, _) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Text(
+          'No se pudieron cargar los complejos',
+          style: GoogleFonts.outfit(fontSize: 13, color: AppColors.red),
+        ),
+      ),
+      data: (complejos) {
+        if (complejos.isEmpty) {
+          return Container(
+            padding: const EdgeInsets.symmetric(vertical: 24),
+            alignment: Alignment.center,
+            child: Text(
+              'Aún no hay complejos registrados',
+              style: GoogleFonts.outfit(
+                  fontSize: 13, color: AppColors.tx3),
+            ),
+          );
+        }
+        return Column(
+          children: complejos
+              .map((c) => _ComplejoCard(complejo: c))
+              .toList(),
+        );
+      },
+    );
+  }
+}
+
+class _ComplejoCard extends ConsumerWidget {
+  final ComplejoModel complejo;
+  const _ComplejoCard({required this.complejo});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final canchasAsync = ref.watch(canchasProvider(complejo.id));
+
+    final canchaCount = canchasAsync.when(
+      loading: () => '…',
+      error: (_, _) => '?',
+      data: (list) => '${list.length}',
+    );
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FFF8),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFD1EDD6)),
+      ),
+      child: Row(
+        children: [
+          // Ícono complejo
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: AppColors.acc.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(
+              Icons.stadium_outlined,
+              size: 22,
+              color: AppColors.acc,
+            ),
+          ),
+          const SizedBox(width: 12),
+
+          // Info
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  complejo.nombre,
+                  style: GoogleFonts.bricolageGrotesque(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.tx,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    const Icon(Icons.location_on_outlined,
+                        size: 12, color: AppColors.tx3),
+                    const SizedBox(width: 3),
+                    Expanded(
+                      child: Text(
+                        complejo.direccion,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.outfit(
+                          fontSize: 11,
+                          color: AppColors.tx3,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 3),
+                Row(
+                  children: [
+                    const Icon(Icons.access_time_rounded,
+                        size: 12, color: AppColors.tx3),
+                    const SizedBox(width: 3),
+                    Text(
+                      '${complejo.horarioApertura} – ${complejo.horarioCierre}',
+                      style: GoogleFonts.outfit(
+                        fontSize: 11,
+                        color: AppColors.tx3,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(width: 8),
+
+          // Canchas badge
+          Column(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: AppColors.acc.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  canchaCount,
+                  style: GoogleFonts.bricolageGrotesque(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.acc,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                'canchas',
+                style: GoogleFonts.outfit(
+                  fontSize: 10,
+                  color: AppColors.tx3,
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -488,7 +873,8 @@ class _AdminPerfil extends ConsumerWidget {
                         ),
                         style: OutlinedButton.styleFrom(
                           side: BorderSide(
-                              color: AppColors.ared.withValues(alpha: 0.35)),
+                              color:
+                                  AppColors.ared.withValues(alpha: 0.35)),
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(14),
@@ -539,7 +925,8 @@ class _AdminHeader extends StatelessWidget {
                   color: AppColors.aaccD,
                   borderRadius: BorderRadius.circular(22),
                   border: Border.all(
-                      color: AppColors.aacc.withValues(alpha: 0.35), width: 2),
+                      color: AppColors.aacc.withValues(alpha: 0.35),
+                      width: 2),
                   boxShadow: [
                     BoxShadow(
                       color: AppColors.aacc.withValues(alpha: 0.2),
@@ -771,4 +1158,3 @@ class _AdminTile extends StatelessWidget {
     );
   }
 }
-

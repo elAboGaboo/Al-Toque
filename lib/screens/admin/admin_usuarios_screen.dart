@@ -162,12 +162,12 @@ class AdminUsuariosScreen extends ConsumerWidget {
                       ),
                     );
                   }
-                  // Admins primero, luego jugadores ordenados por reservas desc
+                  // Admins primero, luego jugadores por nombre
                   final ordenados = [...list]..sort((a, b) {
                       if (a.esDueno != b.esDueno) {
                         return a.esDueno ? -1 : 1;
                       }
-                      return b.totalReservas.compareTo(a.totalReservas);
+                      return a.nombre.compareTo(b.nombre);
                     });
                   return ListView.separated(
                     padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
@@ -272,31 +272,45 @@ class _UsuarioCard extends StatelessWidget {
                     color: AppColors.atx2,
                   ),
                 ),
+                if (usuario.esJugador && usuario.dni.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Row(
+                    children: [
+                      Icon(Icons.badge_outlined,
+                          size: 11,
+                          color: AppColors.atx3),
+                      const SizedBox(width: 3),
+                      Text(
+                        'DNI ${usuario.dni}',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.aacc,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),
           const SizedBox(width: 8),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                '${usuario.totalReservas}',
-                style: GoogleFonts.bricolageGrotesque(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.aacc,
-                  height: 1,
-                ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: usuario.esDueno
+                  ? AppColors.ablu.withValues(alpha: 0.12)
+                  : AppColors.aacc.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              usuario.esDueno ? 'Dueño' : 'Jugador',
+              style: GoogleFonts.outfit(
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+                color: usuario.esDueno ? AppColors.ablu : AppColors.aacc,
               ),
-              const SizedBox(height: 2),
-              Text(
-                'reservas',
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 9,
-                  color: AppColors.atx3,
-                ),
-              ),
-            ],
+            ),
           ),
         ],
       ),

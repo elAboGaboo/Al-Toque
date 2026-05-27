@@ -19,8 +19,9 @@ class RegistroScreen extends ConsumerStatefulWidget {
 class _RegistroScreenState extends ConsumerState<RegistroScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nombreCtrl = TextEditingController();
-  final _emailCtrl = TextEditingController();
-  final _passCtrl = TextEditingController();
+  final _dniCtrl    = TextEditingController();
+  final _emailCtrl  = TextEditingController();
+  final _passCtrl   = TextEditingController();
   final _confirmCtrl = TextEditingController();
   final _codigoCtrl = TextEditingController();
   bool _obscure = true;
@@ -32,6 +33,7 @@ class _RegistroScreenState extends ConsumerState<RegistroScreen> {
   @override
   void dispose() {
     _nombreCtrl.dispose();
+    _dniCtrl.dispose();
     _emailCtrl.dispose();
     _passCtrl.dispose();
     _confirmCtrl.dispose();
@@ -58,6 +60,7 @@ class _RegistroScreenState extends ConsumerState<RegistroScreen> {
           email: _emailCtrl.text.trim(),
           password: _passCtrl.text,
           rol: widget.rolInicial,
+          dni: _esDueno ? '' : _dniCtrl.text.trim(),
         );
 
     if (mounted) {
@@ -176,6 +179,35 @@ class _RegistroScreenState extends ConsumerState<RegistroScreen> {
                     return null;
                   },
                 ),
+                // DNI — solo jugadores
+                if (!_esDueno) ...[
+                  const SizedBox(height: 14),
+                  TextFormField(
+                    controller: _dniCtrl,
+                    keyboardType: TextInputType.number,
+                    textInputAction: TextInputAction.next,
+                    maxLength: 8,
+                    decoration: InputDecoration(
+                      labelText: 'DNI',
+                      hintText: '12345678',
+                      counterText: '',
+                      labelStyle: GoogleFonts.outfit(
+                          color: AppColors.ink.withValues(alpha: 0.5)),
+                      prefixIcon: const Icon(Icons.badge_outlined,
+                          color: AppColors.green, size: 20),
+                    ),
+                    validator: (v) {
+                      if (_esDueno) return null;
+                      if (v == null || v.trim().isEmpty) return 'Ingresa tu DNI';
+                      if (v.trim().length != 8) return 'El DNI debe tener 8 dígitos';
+                      if (!RegExp(r'^\d{8}$').hasMatch(v.trim())) {
+                        return 'Solo números';
+                      }
+                      return null;
+                    },
+                  ),
+                ],
+
                 const SizedBox(height: 14),
 
                 // Email

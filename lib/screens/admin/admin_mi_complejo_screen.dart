@@ -121,14 +121,11 @@ class _AdminMiComplejoScreenState
         ciudad: actual.ciudad,
         lat: _lat,
         lng: _lng,
-        rating: actual.rating,
-        totalResenias: actual.totalResenias,
         horarioApertura: _horaApertura,
         horarioCierre: _horaCierre,
         imagenes: actual.imagenes,
         duenoUid: actual.duenoUid,
         activo: actual.activo,
-        configIA: actual.configIA,
       );
 
       await repo.guardarComplejo(actualizado);

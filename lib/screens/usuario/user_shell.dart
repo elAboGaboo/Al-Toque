@@ -42,30 +42,36 @@ class UserShell extends StatelessWidget {
     ),
   ];
 
+  /// Devuelve el índice del tab activo, o -1 si la ruta actual
+  /// no corresponde a ningún tab (p.ej. /complejo/:id, /reservar/...).
   int _currentIndex(BuildContext context) {
     final loc = GoRouterState.of(context).matchedLocation;
     for (int i = 0; i < _tabs.length; i++) {
       if (loc.startsWith(_tabs[i].route)) return i;
     }
-    return 1; // por defecto Mapa
+    return -1; // ruta de detalle/reserva/partido — sin tab activo
   }
 
   @override
   Widget build(BuildContext context) {
     final selected = _currentIndex(context);
+    // El bottom nav solo se muestra cuando estamos en un tab principal.
+    final showNav = selected >= 0;
 
     return Scaffold(
       backgroundColor: AppColors.paper,
-      // El body es el contenido de cada ruta (mapa, inicio, etc.)
+      // El body es el contenido de cada ruta (mapa, inicio, detalle, etc.)
       body: child,
-      bottomNavigationBar: _BottomNavBar(
-        selectedIndex: selected,
-        items: _tabs,
-        onTap: (i) {
-          if (i == selected) return;
-          context.go(_tabs[i].route);
-        },
-      ),
+      bottomNavigationBar: showNav
+          ? _BottomNavBar(
+              selectedIndex: selected,
+              items: _tabs,
+              onTap: (i) {
+                if (i == selected) return;
+                context.go(_tabs[i].route);
+              },
+            )
+          : null,
     );
   }
 }

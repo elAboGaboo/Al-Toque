@@ -88,4 +88,24 @@
                   android:exported="false"/>
 
     </application>
+
+    <!-- url_launcher: necesario en Android 11+ para canLaunchUrl() ──────── -->
+    <queries>
+        <!-- Google Maps (geo: scheme) -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="geo"/>
+        </intent>
+        <!-- Google Maps / navegación web -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="https" android:host="www.google.com"/>
+        </intent>
+        <!-- Waze (opcional, misma URL geo: la detecta también) -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="waze"/>
+        </intent>
+    </queries>
+
 </manifest>

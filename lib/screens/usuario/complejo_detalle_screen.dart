@@ -1,206 +1,435 @@
 // screens/usuario/complejo_detalle_screen.dart
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/theme/app_colors.dart';
+import '../../core/utils/maps_launcher.dart';
 import '../../models/cancha_model.dart';
 import '../../models/complejo_model.dart';
 import '../../providers/complejos_provider.dart';
 
-class ComplejoDetalleScreen extends ConsumerWidget {
+// ─────────────────────────────────────────────────────────────────────────────
+// Arquitectura:
+//  • Complejo: capturado de complejoSeleccionadoProvider en initState (sin
+//    llamada extra a Firestore para navegación normal). Deep links usan
+//    complejoFutureProvider.
+//  • Canchas: ref.watch(canchasFutureProvider) — FutureProvider one-shot.
+//    Siempre resuelve (data / error) en ≤10 s. Nunca se queda en loading.
+//  • SliverFillRemaining en estados vacíos → siempre llena la pantalla.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class ComplejoDetalleScreen extends ConsumerStatefulWidget {
   final String complejoId;
   const ComplejoDetalleScreen({super.key, required this.complejoId});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final complejoAsync = ref.watch(complejoProvider(complejoId));
+  ConsumerState<ComplejoDetalleScreen> createState() =>
+      _ComplejoDetalleScreenState();
+}
+
+class _ComplejoDetalleScreenState
+    extends ConsumerState<ComplejoDetalleScreen> {
+  // Complejo capturado sincrónicamente en initState.
+  // Para navegación normal (Inicio/Mapa) siempre está disponible.
+  // Para deep links (_complejo == null) se usa complejoFutureProvider.
+  ComplejoModel? _complejo;
+
+  @override
+  void initState() {
+    super.initState();
+    final cached = ref.read(complejoSeleccionadoProvider);
+    if (cached != null && cached.id == widget.complejoId) {
+      _complejo = cached;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final canchasAsync = ref.watch(canchasFutureProvider(widget.complejoId));
+
+    // ── Complejo disponible (navegación normal) ───────────────────────────
+    if (_complejo != null) {
+      return _Scaffold(
+        child: _buildContent(_complejo!, canchasAsync),
+      );
+    }
+
+    // ── Deep link: cargar complejo desde Firestore ────────────────────────
+    final complejoAsync = ref.watch(complejoFutureProvider(widget.complejoId));
 
     return complejoAsync.when(
-      loading: () => _buildScaffold(
-        context,
-        body: const Center(
-          child: CircularProgressIndicator(color: AppColors.acc),
+      loading: () => _Scaffold(
+        child: _LoadingView(onBack: _goBack),
+      ),
+      error: (e, _) => _Scaffold(
+        child: _ErrorView(
+          error: e.toString(),
+          onRetry: () =>
+              ref.invalidate(complejoFutureProvider(widget.complejoId)),
         ),
       ),
-      error: (e, _) {
-        debugPrint('[ComplejoDetalle] error: $e');
-        return _buildScaffold(
-          context,
-          body: _ErrorBody(mensaje: 'No se pudo cargar el complejo.'),
-        );
-      },
       data: (complejo) {
         if (complejo == null) {
-          return _buildScaffold(
-            context,
-            body: _ErrorBody(
-                mensaje: 'Este complejo ya no está disponible.'),
-          );
+          return _Scaffold(child: _NotFoundView(onBack: _goBack));
         }
-        return _ComplejoBody(complejo: complejo);
+        return _Scaffold(
+          child: _buildContent(complejo, canchasAsync),
+        );
       },
     );
   }
 
-  /// Scaffold base compartido por loading y error (con back button en AppBar).
-  Widget _buildScaffold(BuildContext context, {required Widget body}) {
-    return Scaffold(
-      backgroundColor: AppColors.bg,
-      appBar: AppBar(
-        backgroundColor: AppColors.bg,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_rounded, color: AppColors.tx),
-          onPressed: () => Navigator.of(context).maybePop(),
+  void _goBack() => Navigator.of(context).maybePop();
+
+  // ── Contenido principal: header + canchas ─────────────────────────────
+
+  Widget _buildContent(
+    ComplejoModel complejo,
+    AsyncValue<List<CanchaModel>> canchasAsync,
+  ) {
+    return CustomScrollView(
+      slivers: [
+        // Header con imagen del complejo
+        _SliverHeader(complejo: complejo, onBack: _goBack),
+
+        // Botón "Cómo llegar" — abre Google Maps
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+            child: OutlinedButton.icon(
+              onPressed: () => MapsLauncher.irA(
+                lat: complejo.lat,
+                lng: complejo.lng,
+                nombre: complejo.nombre,
+              ),
+              icon: const Icon(Icons.directions_rounded, size: 16),
+              label: Text(
+                'Cómo llegar',
+                style: GoogleFonts.outfit(
+                    fontSize: 13, fontWeight: FontWeight.w600),
+              ),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.acc,
+                side: const BorderSide(color: AppColors.acc),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+                minimumSize: const Size(double.infinity, 0),
+              ),
+            ),
+          ),
         ),
-      ),
-      body: body,
+
+        // Título sección canchas
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+            child: Text(
+              'Canchas disponibles',
+              style: GoogleFonts.bricolageGrotesque(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: AppColors.tx,
+                letterSpacing: -0.3,
+              ),
+            ),
+          ),
+        ),
+
+        // Canchas: cargando / error / vacío / lista
+        ..._canchasSliver(canchasAsync),
+      ],
+    );
+  }
+
+  // ── Slivers de canchas según estado ───────────────────────────────────
+
+  List<Widget> _canchasSliver(AsyncValue<List<CanchaModel>> async) {
+    return async.when(
+      loading: () => [
+        const SliverFillRemaining(
+          hasScrollBody: false,
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(
+                  color: AppColors.acc,
+                  strokeWidth: 2.5,
+                ),
+                SizedBox(height: 14),
+                Text(
+                  'Cargando canchas…',
+                  style: TextStyle(color: AppColors.tx3, fontSize: 13),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+      error: (e, _) => [
+        SliverFillRemaining(
+          hasScrollBody: false,
+          child: _CanchasError(
+            error: e.toString(),
+            onRetry: () =>
+                ref.invalidate(canchasFutureProvider(widget.complejoId)),
+          ),
+        ),
+      ],
+      data: (canchas) {
+        if (canchas.isEmpty) {
+          return [
+            SliverFillRemaining(
+              hasScrollBody: false,
+              child: _EmptyStateCanchas(complejoId: widget.complejoId),
+            ),
+          ];
+        }
+        return [
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 100),
+            sliver: SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (_, i) => Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: _CanchaCard(
+                    cancha: canchas[i],
+                    onReservar: () => context.push(
+                      '/reservar/${canchas[i].complejoId}/${canchas[i].id}',
+                    ),
+                  ),
+                ),
+                childCount: canchas.length,
+              ),
+            ),
+          ),
+        ];
+      },
     );
   }
 }
 
-// ── Cuerpo principal — un solo Scaffold con CustomScrollView ─────────────────
+// ── Scaffold base (evita repetir backgroundColor en cada estado) ─────────────
 
-class _ComplejoBody extends ConsumerWidget {
-  final ComplejoModel complejo;
-  const _ComplejoBody({required this.complejo});
+class _Scaffold extends StatelessWidget {
+  final Widget child;
+  const _Scaffold({required this.child});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final canchasAsync = ref.watch(canchasProvider(complejo.id));
+  Widget build(BuildContext context) => Scaffold(
+        backgroundColor: AppColors.bg,
+        body: child,
+      );
+}
 
-    return Scaffold(
-      backgroundColor: AppColors.bg,
-      body: CustomScrollView(
-        slivers: [
-          // ── Header con imagen ────────────────────────────
-          _SliverHeader(complejo: complejo),
+// ── Vista: cargando complejo (deep links) ─────────────────────────────────────
 
-          // ── Título sección canchas ───────────────────────
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
-              child: Text(
-                'Canchas disponibles',
-                style: GoogleFonts.bricolageGrotesque(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.tx,
-                  letterSpacing: -0.3,
+class _LoadingView extends StatelessWidget {
+  final VoidCallback onBack;
+  const _LoadingView({required this.onBack});
+
+  @override
+  Widget build(BuildContext context) => SafeArea(
+        child: Column(
+          children: [
+            _BackButton(onBack: onBack),
+            const Expanded(
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(color: AppColors.acc),
+                    SizedBox(height: 16),
+                    Text('Cargando complejo…',
+                        style:
+                            TextStyle(color: AppColors.tx2, fontSize: 13)),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+}
+
+// ── Vista: error al cargar complejo (deep links) ──────────────────────────────
+
+class _ErrorView extends StatelessWidget {
+  final String error;
+  final VoidCallback onRetry;
+  const _ErrorView({required this.error, required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    final msg = _errorMsg(error);
+    return SafeArea(
+      child: Column(
+        children: [
+          _BackButton(onBack: () => Navigator.of(context).maybePop()),
+          Expanded(
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(32),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _ErrorIcon(),
+                    const SizedBox(height: 16),
+                    Text('Error al cargar',
+                        style: GoogleFonts.bricolageGrotesque(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.tx)),
+                    const SizedBox(height: 8),
+                    Text(msg,
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.outfit(
+                            fontSize: 13,
+                            color: AppColors.tx2,
+                            height: 1.5)),
+                    if (kDebugMode) ...[
+                      const SizedBox(height: 8),
+                      SelectableText(error,
+                          style: GoogleFonts.outfit(
+                              fontSize: 10, color: AppColors.tx3)),
+                    ],
+                    const SizedBox(height: 20),
+                    _RetryButton(onRetry: onRetry),
+                  ],
                 ),
               ),
             ),
           ),
-
-          // ── Canchas: loading ─────────────────────────────
-          if (canchasAsync.isLoading)
-            const SliverToBoxAdapter(
-              child: Padding(
-                padding: EdgeInsets.symmetric(vertical: 48),
-                child: Center(
-                  child: CircularProgressIndicator(color: AppColors.acc),
-                ),
-              ),
-            ),
-
-          // ── Canchas: error ───────────────────────────────
-          if (canchasAsync.hasError)
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.all(40),
-                child: Center(
-                  child: Text(
-                    'Error cargando canchas',
-                    style: GoogleFonts.outfit(color: AppColors.red),
-                  ),
-                ),
-              ),
-            ),
-
-          // ── Canchas: vacías ──────────────────────────────
-          if (!canchasAsync.isLoading &&
-              !canchasAsync.hasError &&
-              (canchasAsync.value?.isEmpty ?? true))
-            const SliverToBoxAdapter(child: _EmptyStateCanchas()),
-
-          // ── Canchas: lista ───────────────────────────────
-          if (!canchasAsync.isLoading &&
-              !canchasAsync.hasError &&
-              (canchasAsync.value?.isNotEmpty ?? false))
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 100),
-              sliver: SliverList(
-                delegate: SliverChildBuilderDelegate(
-                  (_, i) {
-                    final canchas = canchasAsync.value!;
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: _CanchaCard(
-                        cancha: canchas[i],
-                        onReservar: () => context.push(
-                          '/reservar/${canchas[i].complejoId}/${canchas[i].id}',
-                        ),
-                      ),
-                    );
-                  },
-                  childCount: canchasAsync.value!.length,
-                ),
-              ),
-            ),
         ],
       ),
     );
   }
 }
 
-// ── Error body (sin Scaffold propio) ─────────────────────────────────────────
+// ── Vista: complejo no encontrado ─────────────────────────────────────────────
 
-class _ErrorBody extends StatelessWidget {
-  final String mensaje;
-  const _ErrorBody({required this.mensaje});
+class _NotFoundView extends StatelessWidget {
+  final VoidCallback onBack;
+  const _NotFoundView({required this.onBack});
+
+  @override
+  Widget build(BuildContext context) => SafeArea(
+        child: Column(
+          children: [
+            _BackButton(onBack: onBack),
+            Expanded(
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.search_off_rounded,
+                        color: AppColors.tx3, size: 48),
+                    const SizedBox(height: 16),
+                    Text('Complejo no encontrado',
+                        style: GoogleFonts.bricolageGrotesque(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.tx)),
+                    const SizedBox(height: 8),
+                    Text('Este complejo ya no está disponible.',
+                        style: GoogleFonts.outfit(
+                            fontSize: 13, color: AppColors.tx2)),
+                    const SizedBox(height: 20),
+                    ElevatedButton(
+                      onPressed: onBack,
+                      style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.acc,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12))),
+                      child: Text('Volver',
+                          style: GoogleFonts.outfit(
+                              fontWeight: FontWeight.w700)),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+}
+
+// ── Error inline de canchas ───────────────────────────────────────────────────
+
+class _CanchasError extends StatelessWidget {
+  final String error;
+  final VoidCallback onRetry;
+  const _CanchasError({required this.error, required this.onRetry});
 
   @override
   Widget build(BuildContext context) {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.error_outline_rounded,
-                color: AppColors.tx3, size: 48),
-            const SizedBox(height: 16),
-            Text(
-              mensaje,
-              textAlign: TextAlign.center,
-              style: GoogleFonts.outfit(fontSize: 15, color: AppColors.tx2),
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton(
-              onPressed: () => Navigator.of(context).maybePop(),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.acc,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: AppColors.sur,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: AppColors.bdr2),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.tx.withValues(alpha: 0.05),
+                blurRadius: 12,
+                offset: const Offset(0, 2),
               ),
-              child: Text('Volver',
-                  style: GoogleFonts.outfit(fontWeight: FontWeight.w700)),
-            ),
-          ],
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _ErrorIcon(),
+              const SizedBox(height: 14),
+              Text('No se pudieron cargar las canchas',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.bricolageGrotesque(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.tx)),
+              const SizedBox(height: 8),
+              Text(_errorMsg(error),
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.outfit(
+                      fontSize: 13, color: AppColors.tx2, height: 1.4)),
+              if (kDebugMode) ...[
+                const SizedBox(height: 10),
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: AppColors.sur2,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: SelectableText(error,
+                      style: GoogleFonts.outfit(
+                          fontSize: 10, color: AppColors.tx3)),
+                ),
+              ],
+              const SizedBox(height: 16),
+              _RetryButton(onRetry: onRetry),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-// ── Sliver header con imagen y datos del complejo ────────────────────────────
+// ── Sliver header con imagen ──────────────────────────────────────────────────
 
 class _SliverHeader extends StatelessWidget {
   final ComplejoModel complejo;
-  const _SliverHeader({required this.complejo});
+  final VoidCallback onBack;
+  const _SliverHeader({required this.complejo, required this.onBack});
 
   @override
   Widget build(BuildContext context) {
@@ -208,8 +437,9 @@ class _SliverHeader extends StatelessWidget {
       expandedHeight: 240,
       pinned: true,
       backgroundColor: AppColors.bg,
+      automaticallyImplyLeading: false,
       leading: GestureDetector(
-        onTap: () => Navigator.of(context).maybePop(),
+        onTap: onBack,
         child: Container(
           margin: const EdgeInsets.all(8),
           decoration: BoxDecoration(
@@ -228,9 +458,10 @@ class _SliverHeader extends StatelessWidget {
                 ? Image.network(
                     complejo.imagenPrincipal,
                     fit: BoxFit.cover,
-                    errorBuilder: (context, error, stack) => _placeholderImg(),
+                    errorBuilder: (_, _, _) => _Placeholder(),
                   )
-                : _placeholderImg(),
+                : _Placeholder(),
+            // Gradiente para legibilidad del texto
             Container(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
@@ -243,6 +474,7 @@ class _SliverHeader extends StatelessWidget {
                 ),
               ),
             ),
+            // Info del complejo
             Positioned(
               left: 20,
               right: 20,
@@ -260,47 +492,43 @@ class _SliverHeader extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      const Icon(Icons.location_on_rounded,
-                          size: 13, color: Colors.white70),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: Text(
-                          complejo.direccion,
-                          style: GoogleFonts.outfit(
-                              fontSize: 12,
-                              color: Colors.white.withValues(alpha: 0.8)),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      const Icon(Icons.star_rounded,
-                          size: 13, color: AppColors.amber),
-                      const SizedBox(width: 4),
-                      Text(
-                        complejo.rating.toStringAsFixed(1),
-                        style: GoogleFonts.outfit(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.white),
-                      ),
-                      const SizedBox(width: 16),
-                      const Icon(Icons.access_time_rounded,
-                          size: 13, color: Colors.white70),
-                      const SizedBox(width: 4),
-                      Text(
-                        '${complejo.horarioApertura} – ${complejo.horarioCierre}',
+                  Row(children: [
+                    const Icon(Icons.location_on_rounded,
+                        size: 13, color: Colors.white70),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        complejo.direccion,
                         style: GoogleFonts.outfit(
                             fontSize: 12,
                             color: Colors.white.withValues(alpha: 0.8)),
+                        overflow: TextOverflow.ellipsis,
                       ),
-                    ],
-                  ),
+                    ),
+                  ]),
+                  const SizedBox(height: 6),
+                  Row(children: [
+                    const Icon(Icons.star_rounded,
+                        size: 13, color: AppColors.amber),
+                    const SizedBox(width: 4),
+                    Text(
+                      complejo.ciudad,
+                      style: GoogleFonts.outfit(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white),
+                    ),
+                    const SizedBox(width: 16),
+                    const Icon(Icons.access_time_rounded,
+                        size: 13, color: Colors.white70),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${complejo.horarioApertura} – ${complejo.horarioCierre}',
+                      style: GoogleFonts.outfit(
+                          fontSize: 12,
+                          color: Colors.white.withValues(alpha: 0.8)),
+                    ),
+                  ]),
                 ],
               ),
             ),
@@ -309,17 +537,9 @@ class _SliverHeader extends StatelessWidget {
       ),
     );
   }
-
-  Widget _placeholderImg() => Container(
-        color: AppColors.sur2,
-        child: const Center(
-          child: Icon(Icons.sports_soccer_rounded,
-              color: AppColors.acc, size: 48),
-        ),
-      );
 }
 
-// ── Tarjeta de cancha ────────────────────────────────────────────────────────
+// ── Tarjeta de cancha ─────────────────────────────────────────────────────────
 
 class _CanchaCard extends StatelessWidget {
   final CanchaModel cancha;
@@ -344,6 +564,7 @@ class _CanchaCard extends StatelessWidget {
       ),
       child: Row(
         children: [
+          // Ícono deporte
           Container(
             width: 52,
             height: 52,
@@ -357,6 +578,7 @@ class _CanchaCard extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 14),
+          // Info
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -372,47 +594,42 @@ class _CanchaCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '${cancha.deporteLabel} · ${cancha.superficieLabel} · ${cancha.capacidad} jugadores',
-                  style:
-                      GoogleFonts.outfit(fontSize: 12, color: AppColors.tx2),
+                  '${cancha.deporteLabel} · ${cancha.superficieLabel} · ${cancha.capacidad} jug.',
+                  style: GoogleFonts.outfit(
+                      fontSize: 12, color: AppColors.tx2),
                 ),
                 const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Text(
-                      'S/ ${cancha.precioBase.toStringAsFixed(0)}',
-                      style: GoogleFonts.bricolageGrotesque(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.acc,
-                      ),
+                Row(children: [
+                  Text(
+                    'S/ ${cancha.precioBase.toStringAsFixed(0)}',
+                    style: GoogleFonts.bricolageGrotesque(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.acc,
                     ),
-                    Text(
-                      ' / hora',
+                  ),
+                  Text(' / hora',
                       style: GoogleFonts.outfit(
-                          fontSize: 11, color: AppColors.tx3),
-                    ),
-                  ],
-                ),
+                          fontSize: 11, color: AppColors.tx3)),
+                ]),
               ],
             ),
           ),
+          // Botón reservar
           ElevatedButton(
             onPressed: onReservar,
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.acc,
               foregroundColor: Colors.white,
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 16, vertical: 10),
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(10)),
               elevation: 0,
             ),
-            child: Text(
-              'Reservar',
-              style:
-                  GoogleFonts.outfit(fontSize: 13, fontWeight: FontWeight.w700),
-            ),
+            child: Text('Reservar',
+                style: GoogleFonts.outfit(
+                    fontSize: 13, fontWeight: FontWeight.w700)),
           ),
         ],
       ),
@@ -420,46 +637,184 @@ class _CanchaCard extends StatelessWidget {
   }
 }
 
-// ── Empty state ──────────────────────────────────────────────────────────────
+// ── Empty state de canchas ────────────────────────────────────────────────────
 
 class _EmptyStateCanchas extends StatelessWidget {
-  const _EmptyStateCanchas();
+  final String complejoId;
+  const _EmptyStateCanchas({required this.complejoId});
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 60),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 68,
-            height: 68,
-            decoration: BoxDecoration(
-              color: AppColors.sur2,
-              borderRadius: BorderRadius.circular(18),
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 72,
+              height: 72,
+              decoration: BoxDecoration(
+                color: AppColors.accLight,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: const Icon(Icons.stadium_outlined,
+                  color: AppColors.acc, size: 34),
             ),
-            child: const Icon(Icons.stadium_outlined,
-                color: AppColors.tx3, size: 32),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'Sin canchas disponibles',
-            style: GoogleFonts.bricolageGrotesque(
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
-              color: AppColors.tx,
+            const SizedBox(height: 18),
+            Text('Sin canchas disponibles',
+                style: GoogleFonts.bricolageGrotesque(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.tx)),
+            const SizedBox(height: 8),
+            Text(
+              'Este complejo aún no tiene canchas activas.\nVuelve pronto.',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.outfit(
+                  fontSize: 13, color: AppColors.tx2, height: 1.5),
             ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Este complejo aún no tiene canchas activas.\nVuelve pronto.',
-            textAlign: TextAlign.center,
-            style: GoogleFonts.outfit(
-                fontSize: 13, color: AppColors.tx2, height: 1.5),
-          ),
-        ],
+
+            // Panel de debug — solo en modo debug
+            if (kDebugMode) ...[
+              const SizedBox(height: 24),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: AppColors.sur2,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: AppColors.bdr),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(children: [
+                      const Icon(Icons.bug_report_rounded,
+                          size: 14, color: AppColors.tx3),
+                      const SizedBox(width: 6),
+                      Text('Debug',
+                          style: GoogleFonts.outfit(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.tx3)),
+                    ]),
+                    const SizedBox(height: 6),
+                    Text('Complejo ID:',
+                        style: GoogleFonts.outfit(
+                            fontSize: 10, color: AppColors.tx3)),
+                    SelectableText(complejoId,
+                        style: GoogleFonts.outfit(
+                            fontSize: 11,
+                            color: AppColors.acc,
+                            fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () => context.push('/dev/seed'),
+                        icon: const Icon(Icons.rocket_launch_rounded,
+                            size: 14),
+                        label: Text('Poblar base de datos',
+                            style: GoogleFonts.outfit(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600)),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.acc,
+                          side: const BorderSide(color: AppColors.acc),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10)),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
+}
+
+// ── Widgets auxiliares compartidos ────────────────────────────────────────────
+
+class _BackButton extends StatelessWidget {
+  final VoidCallback onBack;
+  const _BackButton({required this.onBack});
+
+  @override
+  Widget build(BuildContext context) => Align(
+        alignment: Alignment.centerLeft,
+        child: IconButton(
+          icon:
+              const Icon(Icons.arrow_back_rounded, color: AppColors.tx),
+          onPressed: onBack,
+        ),
+      );
+}
+
+class _ErrorIcon extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) => Container(
+        width: 52,
+        height: 52,
+        decoration: BoxDecoration(
+          color: AppColors.red.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: const Icon(Icons.wifi_off_rounded,
+            color: AppColors.red, size: 26),
+      );
+}
+
+class _RetryButton extends StatelessWidget {
+  final VoidCallback onRetry;
+  const _RetryButton({required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) => FilledButton.icon(
+        onPressed: onRetry,
+        icon: const Icon(Icons.refresh_rounded, size: 16),
+        label: Text('Reintentar',
+            style: GoogleFonts.outfit(fontWeight: FontWeight.w700)),
+        style: FilledButton.styleFrom(
+          backgroundColor: AppColors.acc,
+          padding: const EdgeInsets.symmetric(
+              horizontal: 24, vertical: 12),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12)),
+        ),
+      );
+}
+
+class _Placeholder extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) => Container(
+        color: AppColors.sur2,
+        child: const Center(
+          child: Icon(Icons.sports_soccer_rounded,
+              color: AppColors.acc, size: 48),
+        ),
+      );
+}
+
+// ── Helper: mensaje de error legible ─────────────────────────────────────────
+
+String _errorMsg(String error) {
+  if (error.contains('permission-denied') || error.contains('403')) {
+    return 'Sin permisos para leer los datos.\nRevisa las reglas de Firestore.';
+  }
+  if (error.contains('timeout') ||
+      error.contains('respondió') ||
+      error.contains('timed out')) {
+    return 'Sin respuesta del servidor.\nVerifica tu conexión e intenta de nuevo.';
+  }
+  if (error.contains('unavailable') ||
+      error.contains('network') ||
+      error.contains('conexión')) {
+    return 'Sin conexión a internet.\nConéctate y toca "Reintentar".';
+  }
+  return 'Algo salió mal. Toca "Reintentar".';
 }

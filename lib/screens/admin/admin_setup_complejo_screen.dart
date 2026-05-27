@@ -187,8 +187,6 @@ class _AdminSetupComplejoScreenState
           ciudad: 'Huancayo',
           lat: _lat,
           lng: _lng,
-          rating: 0,
-          totalResenias: 0,
           horarioApertura: _horaApertura,
           horarioCierre: _horaCierre,
           imagenes: const [],
@@ -795,7 +793,7 @@ class _AdminSetupComplejoScreenState
                                 overflow: TextOverflow.ellipsis,
                               ),
                               Text(
-                                '${c.horarioApertura} – ${c.horarioCierre}  ·  ${c.rating.toStringAsFixed(1)} ★',
+                                '${c.horarioApertura} – ${c.horarioCierre}',
                                 style: GoogleFonts.outfit(
                                     fontSize: 11,
                                     color: AppColors.atx3),
