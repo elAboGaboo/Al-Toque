@@ -1,19 +1,51 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+/// Representa una oferta relampago (flash) de una cancha.
+///
+/// Los flash slots son ofertas con descuento por tiempo limitado
+/// que pueden ser creadas manualmente por admins o automáticamente
+/// por el sistema de IA para aumentar ocupación.
 class FlashSlotModel {
+  /// ID único del flash slot
   final String id;
+
+  /// ID del complejo deportivo
   final String complejoId;
+
+  /// ID de la cancha en oferta
   final String canchaId;
+
+  /// Fecha de la oferta
   final DateTime fecha;
+
+  /// Hora de inicio en formato HH:MM
   final String horaInicio;
+
+  /// Hora de fin en formato HH:MM
   final String horaFin;
+
+  /// Precio original sin descuento
   final double precioOriginal;
+
+  /// Precio con descuento aplicado
   final double precioFlash;
+
+  /// Porcentaje de descuento (1-99%)
   final int descuentoPct;
+
+  /// Fecha y hora de expiración de la oferta
   final DateTime expiraEn;
-  final String estado;        // activo | reservado | expirado
+
+  /// Estado: "activo", "reservado", "expirado"
+  final String estado;
+
+  /// Contador de vistas (usuarios que vieron la oferta)
   final int vistasCount;
-  final String creadoPor;     // admin | ia_automatico
+
+  /// Quién creó la oferta: "admin" o "ia_automatico"
+  final String creadoPor;
+
+  /// Timestamp de creación del flash slot
   final DateTime creadoEn;
 
   const FlashSlotModel({
@@ -82,4 +114,37 @@ class FlashSlotModel {
     if (dur.inHours > 0) return '${dur.inHours}h ${dur.inMinutes.remainder(60)}m';
     return '${dur.inMinutes}m';
   }
+
+  /// Crea una copia de este flash slot con campos opcionales reemplazados
+  FlashSlotModel copyWith({
+    String? complejoId,
+    String? canchaId,
+    DateTime? fecha,
+    String? horaInicio,
+    String? horaFin,
+    double? precioOriginal,
+    double? precioFlash,
+    int? descuentoPct,
+    DateTime? expiraEn,
+    String? estado,
+    int? vistasCount,
+    String? creadoPor,
+    DateTime? creadoEn,
+  }) =>
+      FlashSlotModel(
+        id: id,
+        complejoId: complejoId ?? this.complejoId,
+        canchaId: canchaId ?? this.canchaId,
+        fecha: fecha ?? this.fecha,
+        horaInicio: horaInicio ?? this.horaInicio,
+        horaFin: horaFin ?? this.horaFin,
+        precioOriginal: precioOriginal ?? this.precioOriginal,
+        precioFlash: precioFlash ?? this.precioFlash,
+        descuentoPct: descuentoPct ?? this.descuentoPct,
+        expiraEn: expiraEn ?? this.expiraEn,
+        estado: estado ?? this.estado,
+        vistasCount: vistasCount ?? this.vistasCount,
+        creadoPor: creadoPor ?? this.creadoPor,
+        creadoEn: creadoEn ?? this.creadoEn,
+      );
 }

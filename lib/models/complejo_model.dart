@@ -31,6 +31,7 @@ class ConfigIA {
 class ComplejoModel {
   final String id;
   final String nombre;
+  final String descripcion;
   final String direccion;
   final String ciudad;
   final double lat;
@@ -40,13 +41,19 @@ class ComplejoModel {
   final String horarioApertura;
   final String horarioCierre;
   final List<String> imagenes;
-  final String adminUid;
+  // Servicios: 'vestuarios', 'duchas', 'cafeteria', 'estacionamiento', 'wifi', 'tribuna'
+  final List<String> servicios;
+  // Modo reserva: 'instantanea' | 'solicitud'
+  final String modoReserva;
+  final String reglas;
+  final String duenoUid;
   final bool activo;
   final ConfigIA configIA;
 
   const ComplejoModel({
     required this.id,
     required this.nombre,
+    this.descripcion = '',
     required this.direccion,
     required this.ciudad,
     required this.lat,
@@ -56,7 +63,10 @@ class ComplejoModel {
     required this.horarioApertura,
     required this.horarioCierre,
     required this.imagenes,
-    required this.adminUid,
+    this.servicios = const [],
+    this.modoReserva = 'instantanea',
+    this.reglas = '',
+    required this.duenoUid,
     required this.activo,
     this.configIA = const ConfigIA(),
   });
@@ -66,6 +76,7 @@ class ComplejoModel {
     return ComplejoModel(
       id: doc.id,
       nombre: d['nombre'] as String? ?? '',
+      descripcion: d['descripcion'] as String? ?? '',
       direccion: d['direccion'] as String? ?? '',
       ciudad: d['ciudad'] as String? ?? 'Huancayo',
       lat: (d['lat'] as num?)?.toDouble() ?? 0,
@@ -75,7 +86,10 @@ class ComplejoModel {
       horarioApertura: d['horarioApertura'] as String? ?? '07:00',
       horarioCierre: d['horarioCierre'] as String? ?? '23:00',
       imagenes: List<String>.from(d['imagenes'] as List? ?? []),
-      adminUid: d['adminUid'] as String? ?? '',
+      servicios: List<String>.from(d['servicios'] as List? ?? []),
+      modoReserva: d['modoReserva'] as String? ?? 'instantanea',
+      reglas: d['reglas'] as String? ?? '',
+      duenoUid: d['duenoUid'] as String? ?? d['adminUid'] as String? ?? '',
       activo: d['activo'] as bool? ?? true,
       configIA: d['configIA'] != null
           ? ConfigIA.fromMap(d['configIA'] as Map<String, dynamic>)
@@ -83,12 +97,12 @@ class ComplejoModel {
     );
   }
 
-  // Alias fromFirestore para compatibilidad con spec
   factory ComplejoModel.fromFirestore(DocumentSnapshot doc) =>
       ComplejoModel.fromDoc(doc);
 
   Map<String, dynamic> toMap() => {
         'nombre': nombre,
+        'descripcion': descripcion,
         'direccion': direccion,
         'ciudad': ciudad,
         'lat': lat,
@@ -98,37 +112,54 @@ class ComplejoModel {
         'horarioApertura': horarioApertura,
         'horarioCierre': horarioCierre,
         'imagenes': imagenes,
-        'adminUid': adminUid,
+        'servicios': servicios,
+        'modoReserva': modoReserva,
+        'reglas': reglas,
+        'duenoUid': duenoUid,
         'activo': activo,
         'configIA': configIA.toMap(),
       };
 
   String get imagenPrincipal => imagenes.isNotEmpty ? imagenes.first : '';
-
-  /// Estrellas formateadas: "4.8 ★"
   String get ratingLabel => '${rating.toStringAsFixed(1)} ★';
+  bool get esInstantanea => modoReserva == 'instantanea';
+  bool tieneServicio(String s) => servicios.contains(s);
 
   ComplejoModel copyWith({
     String? nombre,
+    String? descripcion,
+    String? direccion,
+    String? ciudad,
+    double? lat,
+    double? lng,
     double? rating,
     int? totalResenias,
+    String? horarioApertura,
+    String? horarioCierre,
     List<String>? imagenes,
+    List<String>? servicios,
+    String? modoReserva,
+    String? reglas,
     bool? activo,
     ConfigIA? configIA,
   }) =>
       ComplejoModel(
         id: id,
         nombre: nombre ?? this.nombre,
-        direccion: direccion,
-        ciudad: ciudad,
-        lat: lat,
-        lng: lng,
+        descripcion: descripcion ?? this.descripcion,
+        direccion: direccion ?? this.direccion,
+        ciudad: ciudad ?? this.ciudad,
+        lat: lat ?? this.lat,
+        lng: lng ?? this.lng,
         rating: rating ?? this.rating,
         totalResenias: totalResenias ?? this.totalResenias,
-        horarioApertura: horarioApertura,
-        horarioCierre: horarioCierre,
+        horarioApertura: horarioApertura ?? this.horarioApertura,
+        horarioCierre: horarioCierre ?? this.horarioCierre,
         imagenes: imagenes ?? this.imagenes,
-        adminUid: adminUid,
+        servicios: servicios ?? this.servicios,
+        modoReserva: modoReserva ?? this.modoReserva,
+        reglas: reglas ?? this.reglas,
+        duenoUid: duenoUid,
         activo: activo ?? this.activo,
         configIA: configIA ?? this.configIA,
       );

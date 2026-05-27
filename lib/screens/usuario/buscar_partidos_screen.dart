@@ -11,6 +11,7 @@ import '../../providers/partidos_provider.dart';
 import '../../widgets/common/empty_state_widget.dart';
 import '../../widgets/common/error_widget.dart';
 import '../../widgets/common/loading_skeleton.dart';
+import '../../providers/location_provider.dart';
 
 class BuscarPartidosScreen extends ConsumerWidget {
   const BuscarPartidosScreen({super.key});
@@ -44,7 +45,7 @@ class BuscarPartidosScreen extends ConsumerWidget {
       ),
       body: Column(
         children: [
-          // Filtros
+          _BarraUbicacion(),
           _BarraFiltros(filtros: filtros),
 
           // Lista
@@ -53,7 +54,7 @@ class BuscarPartidosScreen extends ConsumerWidget {
               loading: () => ListView.builder(
                 padding: const EdgeInsets.all(12),
                 itemCount: 4,
-                itemBuilder: (_, __) => const PartidoCardSkeleton(),
+                itemBuilder: (_, _) => const PartidoCardSkeleton(),
               ),
               error: (e, _) => AppErrorWidget(
                 mensaje: 'Error cargando partidos',
@@ -86,6 +87,44 @@ class BuscarPartidosScreen extends ConsumerWidget {
               },
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BarraUbicacion extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final ubicacionAsync = ref.watch(ubicacionProvider);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      color: AppColors.white,
+      child: Row(
+        children: [
+          const Icon(Icons.location_on_rounded, color: AppColors.party, size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: ubicacionAsync.when(
+              data: (pos) {
+                final direccionAsync = ref.watch(direccionProvider(pos));
+                return direccionAsync.when(
+                  data: (dir) => Text(
+                    dir,
+                    style: GoogleFonts.outfit(fontSize: 13, color: AppColors.ink),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  loading: () => const Text('Obteniendo dirección...'),
+                  error: (_, _) => const Text('Ubicación actual'),
+                );
+              },
+              loading: () => const Text('Buscando GPS...'),
+              error: (_, _) => const Text('Huancayo, Perú'),
+            ),
+          ),
+          const Icon(Icons.keyboard_arrow_down_rounded, color: AppColors.ink, size: 18),
         ],
       ),
     );

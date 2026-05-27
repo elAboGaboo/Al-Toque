@@ -1,148 +1,170 @@
-import 'dart:ui' as ui;
-
 import 'package:flutter/material.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
 
-/// Genera BitmapDescriptors personalizados para los pins del mapa.
+import '../../../core/theme/app_colors.dart';
+
+/// Marcadores Widget para flutter_map — sin async, sin BitmapDescriptor.
 class MapMarkerPainter {
   MapMarkerPainter._();
 
-  static Future<BitmapDescriptor> pinNormal({
+  static Widget pinNormal({
     required String precio,
     required String nombre,
-  }) async {
-    return _drawPin(
-      bgColor: Colors.white,
-      borderColor: const Color(0xFF1B5E3B),
-      textColor: const Color(0xFF0F0F0E),
-      label: 'S/$precio',
-      subLabel: nombre,
-    );
-  }
+  }) =>
+      _PinWidget(
+        label: 'S/$precio',
+        subLabel: nombre,
+        bgColor: Colors.white,
+        borderColor: AppColors.acc,
+        textColor: AppColors.tx,
+      );
 
-  static Future<BitmapDescriptor> pinFlash({
+  static Widget pinFlash({
     required String precio,
     required String countdown,
-  }) async {
-    return _drawPin(
-      bgColor: const Color(0xFFF59E0B),
-      borderColor: const Color(0xFFC05E00),
-      textColor: Colors.white,
-      label: '⚡ S/$precio',
-      subLabel: countdown,
-      isFlash: true,
-    );
-  }
+  }) =>
+      _PinWidget(
+        label: '⚡ S/$precio',
+        subLabel: countdown,
+        bgColor: AppColors.flashPin,
+        borderColor: AppColors.flash,
+        textColor: Colors.white,
+      );
 
-  static Future<BitmapDescriptor> pinPartido({
+  static Widget pinPartido({
     required String deporte,
     required String hora,
-    required String progreso, // "4/10"
-  }) async {
-    return _drawPin(
-      bgColor: const Color(0xFF1E40AF),
-      borderColor: const Color(0xFF3B82F6),
-      textColor: Colors.white,
-      label: '$deporte $hora',
-      subLabel: progreso,
-    );
-  }
+    required String progreso,
+  }) =>
+      _PinWidget(
+        label: '$deporte $hora',
+        subLabel: progreso,
+        bgColor: AppColors.party,
+        borderColor: AppColors.party2,
+        textColor: Colors.white,
+      );
 
-  static Future<BitmapDescriptor> pinLleno() async {
-    return _drawPin(
-      bgColor: const Color(0xFFDC2626),
-      borderColor: const Color(0xFF991B1B),
-      textColor: Colors.white,
-      label: 'Lleno',
-      subLabel: '',
-    );
-  }
+  static Widget pinLleno() => const _PinWidget(
+        label: 'Lleno',
+        subLabel: '',
+        bgColor: AppColors.errorRed,
+        borderColor: Color(0xFF991B1B),
+        textColor: Colors.white,
+      );
 
-  static Future<BitmapDescriptor> _drawPin({
-    required Color bgColor,
-    required Color borderColor,
-    required Color textColor,
-    required String label,
-    required String subLabel,
-    bool isFlash = false,
-  }) async {
-    const w = 160.0;
-    const h = 72.0;
-    const tail = 12.0; // punta del pin
-
-    final recorder = ui.PictureRecorder();
-    final canvas = Canvas(recorder);
-
-    // Sombra
-    final shadowPaint = Paint()
-      ..color = Colors.black.withValues(alpha: 0.25)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        const Rect.fromLTWH(3, 3, w - 6, h - tail - 4),
-        const Radius.circular(14),
-      ),
-      shadowPaint,
-    );
-
-    // Fondo del pin
-    final bgPaint = Paint()..color = bgColor;
-    final borderPaint = Paint()
-      ..color = borderColor
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
-
-    final body = RRect.fromRectAndRadius(
-      const Rect.fromLTWH(0, 0, w, h - tail),
-      const Radius.circular(14),
-    );
-    canvas.drawRRect(body, bgPaint);
-    canvas.drawRRect(body, borderPaint);
-
-    // Punta del pin
-    final path = Path()
-      ..moveTo(w / 2 - 8, h - tail)
-      ..lineTo(w / 2, h)
-      ..lineTo(w / 2 + 8, h - tail)
-      ..close();
-    canvas.drawPath(path, bgPaint);
-    canvas.drawPath(path, borderPaint);
-
-    // Texto principal
-    final tp1 = TextPainter(
-      text: TextSpan(
-        text: label,
-        style: TextStyle(
-          color: textColor,
-          fontSize: 15,
-          fontWeight: FontWeight.w700,
-          height: 1,
+  static Widget pinUsuario() => Container(
+        width: 18,
+        height: 18,
+        decoration: BoxDecoration(
+          color: AppColors.acc,
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white, width: 2.5),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.acc.withValues(alpha: 0.4),
+              blurRadius: 8,
+            ),
+          ],
         ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout(maxWidth: w - 12);
-    tp1.paint(canvas, Offset((w - tp1.width) / 2, 10));
+      );
+}
 
-    // Texto secundario
-    if (subLabel.isNotEmpty) {
-      final tp2 = TextPainter(
-        text: TextSpan(
-          text: subLabel,
-          style: TextStyle(
-            color: textColor.withValues(alpha: 0.85),
-            fontSize: 11,
-            fontWeight: FontWeight.w500,
-            height: 1,
+class _PinWidget extends StatelessWidget {
+  final String label;
+  final String subLabel;
+  final Color bgColor;
+  final Color borderColor;
+  final Color textColor;
+
+  const _PinWidget({
+    required this.label,
+    required this.subLabel,
+    required this.bgColor,
+    required this.borderColor,
+    required this.textColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: bgColor,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: borderColor, width: 1.5),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.18),
+                blurRadius: 6,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  color: textColor,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  height: 1.1,
+                ),
+              ),
+              if (subLabel.isNotEmpty) ...[
+                const SizedBox(height: 2),
+                Text(
+                  subLabel,
+                  style: TextStyle(
+                    color: textColor.withValues(alpha: 0.8),
+                    fontSize: 10,
+                    fontWeight: FontWeight.w500,
+                    height: 1.1,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ],
           ),
         ),
-        textDirection: TextDirection.ltr,
-      )..layout(maxWidth: w - 16);
-      tp2.paint(canvas, Offset((w - tp2.width) / 2, 32));
-    }
-
-    final picture = recorder.endRecording();
-    final img = await picture.toImage(w.toInt(), h.toInt());
-    final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
-    return BitmapDescriptor.bytes(bytes!.buffer.asUint8List());
+        CustomPaint(
+          size: const Size(12, 6),
+          painter: _TrianglePainter(color: bgColor, borderColor: borderColor),
+        ),
+      ],
+    );
   }
+}
+
+class _TrianglePainter extends CustomPainter {
+  final Color color;
+  final Color borderColor;
+
+  const _TrianglePainter({required this.color, required this.borderColor});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final fill = Paint()..color = color;
+    final border = Paint()
+      ..color = borderColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5;
+
+    final path = Path()
+      ..moveTo(0, 0)
+      ..lineTo(size.width / 2, size.height)
+      ..lineTo(size.width, 0)
+      ..close();
+
+    canvas.drawPath(path, fill);
+    canvas.drawPath(path, border);
+  }
+
+  @override
+  bool shouldRepaint(_TrianglePainter old) =>
+      old.color != color || old.borderColor != borderColor;
 }

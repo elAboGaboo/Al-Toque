@@ -1,10 +1,12 @@
 // screens/usuario/perfil_screen.dart
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import 'package:go_router/go_router.dart';
+
 import '../../core/theme/app_colors.dart';
+import '../../models/usuario_model.dart';
 import '../../providers/auth_provider.dart';
 
 class PerfilScreen extends ConsumerWidget {
@@ -14,284 +16,489 @@ class PerfilScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final perfilAsync = ref.watch(perfilUsuarioProvider);
 
-    return Scaffold(
-      backgroundColor: AppColors.paper,
-      body: SafeArea(
-        child: perfilAsync.when(
-          loading: () =>
-              const Center(child: CircularProgressIndicator()),
-          error: (e, _) => Center(child: Text('Error: $e')),
-          data: (perfil) {
-            if (perfil == null) {
-              return const Center(child: Text('Sin perfil'));
-            }
-            return SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // ── Header con avatar ───────────────
-                  Center(
-                    child: Column(
-                      children: [
-                        Container(
-                          width: 88,
-                          height: 88,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            gradient: LinearGradient(
-                              colors: [AppColors.green, AppColors.green2],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color:
-                                    AppColors.green.withValues(alpha: 0.3),
-                                blurRadius: 20,
-                                offset: const Offset(0, 8),
-                              ),
-                            ],
-                          ),
-                          child: Center(
-                            child: Text(
-                              perfil.iniciales,
-                              style: GoogleFonts.bricolageGrotesque(
-                                fontSize: 32,
-                                fontWeight: FontWeight.w800,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 14),
-                        Text(
-                          perfil.nombre,
-                          style: GoogleFonts.bricolageGrotesque(
-                            fontSize: 22,
-                            fontWeight: FontWeight.w800,
-                            color: AppColors.ink,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          perfil.email,
-                          style: GoogleFonts.outfit(
-                            fontSize: 13,
-                            color: AppColors.ink2,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: perfil.esAdmin
-                                ? AppColors.party.withValues(alpha: 0.1)
-                                : AppColors.greenLight,
-                            borderRadius: BorderRadius.circular(100),
-                          ),
-                          child: Text(
-                            perfil.esAdmin ? 'Administrador' : 'Jugador',
-                            style: GoogleFonts.outfit(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: perfil.esAdmin
-                                  ? AppColors.party
-                                  : AppColors.green,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 28),
-
-                  // ── Estadísticas ────────────────────
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _StatCard(
-                          label: 'Reservas',
-                          value: '${perfil.totalReservas}',
-                          icon: Icons.calendar_month_rounded,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: _StatCard(
-                          label: 'Gastado',
-                          value:
-                              'S/${perfil.totalGastado.toStringAsFixed(0)}',
-                          icon: Icons.account_balance_wallet_rounded,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
-
-                  // ── Lista de opciones ───────────────
-                  Text(
-                    'CUENTA',
-                    style: GoogleFonts.bricolageGrotesque(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 1.5,
-                      color: AppColors.ink3,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Container(
-                    decoration: BoxDecoration(
-                      color: AppColors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: AppColors.line),
-                    ),
-                    child: Column(
-                      children: [
-                        _MenuTile(
-                          icon: Icons.person_outline_rounded,
-                          label: 'Editar perfil',
-                          onTap: () => _todo(context, 'Editar perfil'),
-                        ),
-                        const Divider(height: 1),
-                        _MenuTile(
-                          icon: Icons.history_rounded,
-                          label: 'Historial de reservas',
-                          onTap: () => _todo(context, 'Historial'),
-                        ),
-                        const Divider(height: 1),
-                        _MenuTile(
-                          icon: Icons.notifications_outlined,
-                          label: 'Notificaciones',
-                          onTap: () => _todo(context, 'Notificaciones'),
-                        ),
-                        const Divider(height: 1),
-                        _MenuTile(
-                          icon: Icons.help_outline_rounded,
-                          label: 'Ayuda y soporte',
-                          onTap: () => _todo(context, 'Soporte'),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-
-                  // ── Cerrar sesión ───────────────────
-                  Material(
-                    color: AppColors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(16),
-                      onTap: () async {
-                        final confirm = await showDialog<bool>(
-                          context: context,
-                          builder: (dialogCtx) => AlertDialog(
-                            title: const Text('¿Cerrar sesión?'),
-                            content: const Text(
-                                'Tendrás que iniciar sesión otra vez.'),
-                            actions: [
-                              TextButton(
-                                onPressed: () =>
-                                    Navigator.pop(dialogCtx, false),
-                                child: const Text('Cancelar'),
-                              ),
-                              FilledButton(
-                                onPressed: () =>
-                                    Navigator.pop(dialogCtx, true),
-                                style: FilledButton.styleFrom(
-                                  backgroundColor: AppColors.errorRed,
-                                ),
-                                child: const Text('Cerrar sesión'),
-                              ),
-                            ],
-                          ),
-                        );
-                        if (confirm == true) {
-                          // Cerrar sesión. El router detecta el cambio de auth
-                          // state y redirige automáticamente a /welcome.
-                          await FirebaseAuth.instance.signOut();
-                        }
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          border: Border.all(
-                              color: AppColors.errorRed.withValues(alpha: 0.3)),
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(Icons.logout_rounded,
-                                color: AppColors.errorRed, size: 20),
-                            const SizedBox(width: 12),
-                            Text(
-                              'Cerrar sesión',
-                              style: GoogleFonts.outfit(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.errorRed,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
-        ),
+    return perfilAsync.when(
+      loading: () => const Scaffold(
+        backgroundColor: AppColors.bg,
+        body: Center(child: CircularProgressIndicator(color: AppColors.acc)),
       ),
-    );
-  }
-
-  void _todo(BuildContext context, String feature) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('$feature: próximamente')),
+      error: (_, _) => const Scaffold(
+        backgroundColor: AppColors.bg,
+        body: Center(child: Text('Error cargando perfil')),
+      ),
+      data: (perfil) {
+        if (perfil == null) return const SizedBox.shrink();
+        if (perfil.esDueno) return _AdminPerfil(perfil: perfil);
+        return _JugadorPerfil(perfil: perfil);
+      },
     );
   }
 }
 
-class _StatCard extends StatelessWidget {
+// ─────────────────────────────────────────────────────────────────────────────
+// JUGADOR — diseño con header verde oscuro + cuerpo claro
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _JugadorPerfil extends ConsumerWidget {
+  final UsuarioModel perfil;
+  const _JugadorPerfil({required this.perfil});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Scaffold(
+      backgroundColor: AppColors.bg,
+      body: Column(
+        children: [
+          // ── Header verde oscuro ──────────────────────────────
+          _Header(perfil: perfil),
+
+          // ── Cuerpo blanco/crema ──────────────────────────────
+          Expanded(
+            child: SingleChildScrollView(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 28, 20, 24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Mi perfil',
+                      style: GoogleFonts.bricolageGrotesque(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.tx,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Deporte favorito
+                    _PerfilTile(
+                      iconBg: const Color(0xFFEBF5FF),
+                      iconColor: const Color(0xFF3B82F6),
+                      icon: Icons.sports_soccer_rounded,
+                      label: 'Deporte favorito',
+                      value:
+                          '${_deporteLabel(perfil.deporteFavorito)} · ${perfil.totalReservas} reservas',
+                    ),
+
+                    // Método de pago (placeholder)
+                    const _PerfilTile(
+                      iconBg: Color(0xFFFFF3E0),
+                      iconColor: Color(0xFFE67E22),
+                      icon: Icons.credit_card_rounded,
+                      label: 'Método de pago',
+                      value: 'Yape · **** 4821',
+                    ),
+
+                    // Total gastado
+                    _PerfilTile(
+                      iconBg: const Color(0xFFE8F5E9),
+                      iconColor: AppColors.acc,
+                      icon: Icons.attach_money_rounded,
+                      label: 'Total invertido',
+                      value: 'S/${perfil.totalGastado.toStringAsFixed(0)}',
+                    ),
+
+                    // Email
+                    _PerfilTile(
+                      iconBg: const Color(0xFFF3E8FF),
+                      iconColor: const Color(0xFF7C3AED),
+                      icon: Icons.email_outlined,
+                      label: 'Correo electrónico',
+                      value: perfil.email,
+                    ),
+
+                    const SizedBox(height: 32),
+
+                    // Setup base de datos (solo desarrollo)
+                    Center(
+                      child: TextButton.icon(
+                        onPressed: () => context.push('/dev/seed'),
+                        icon: const Icon(Icons.dataset_rounded,
+                            size: 16, color: AppColors.acc),
+                        label: Text(
+                          'Poblar base de datos',
+                          style: GoogleFonts.outfit(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.acc,
+                          ),
+                        ),
+                      ),
+                    ),
+
+                    // Logout
+                    Center(
+                      child: TextButton(
+                        onPressed: () =>
+                            ref.read(authNotifierProvider.notifier).logout(),
+                        child: Text(
+                          'Cerrar Sesión',
+                          style: GoogleFonts.outfit(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.red,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _deporteLabel(String deporte) {
+    return switch (deporte) {
+      'futbol5' => 'Fútbol 5',
+      'futbol7' => 'Fútbol 7',
+      'futbol11' => 'Fútbol 11',
+      'fulbito' => 'Fulbito',
+      'basquet' => 'Básquet',
+      'voley' => 'Vóley',
+      'tenis' => 'Tenis',
+      'padel' => 'Pádel',
+      _ => deporte,
+    };
+  }
+}
+
+class _Header extends StatelessWidget {
+  final UsuarioModel perfil;
+  const _Header({required this.perfil});
+
+  static const _headerBg = Color(0xFF0F2419);
+
+  String _nivelLabel(int r) {
+    if (r >= 20) return 'MVP';
+    if (r >= 10) return 'Pro';
+    if (r >= 5) return 'Semi';
+    return 'Rookie';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      decoration: const BoxDecoration(
+        color: _headerBg,
+        borderRadius: BorderRadius.only(
+          bottomLeft: Radius.circular(32),
+          bottomRight: Radius.circular(32),
+        ),
+      ),
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 24, 24, 28),
+          child: Column(
+            children: [
+              // Avatar cuadrado redondeado
+              Container(
+                width: 76,
+                height: 76,
+                decoration: BoxDecoration(
+                  color: AppColors.acc,
+                  borderRadius: BorderRadius.circular(22),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.acc.withValues(alpha: 0.4),
+                      blurRadius: 20,
+                      offset: const Offset(0, 6),
+                    ),
+                  ],
+                ),
+                child: Center(
+                  child: Text(
+                    perfil.iniciales,
+                    style: GoogleFonts.bricolageGrotesque(
+                      fontSize: 28,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 14),
+
+              // Nombre
+              Text(
+                perfil.nombre,
+                style: GoogleFonts.bricolageGrotesque(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                ),
+              ),
+
+              const SizedBox(height: 4),
+
+              // Email
+              Text(
+                perfil.email,
+                style: GoogleFonts.outfit(
+                  fontSize: 13,
+                  color: Colors.white.withValues(alpha: 0.55),
+                ),
+              ),
+
+              const SizedBox(height: 24),
+
+              // Stats row
+              Row(
+                children: [
+                  Expanded(
+                    child: _HeaderStat(
+                      val: '${perfil.totalReservas}',
+                      label: 'Reservas',
+                    ),
+                  ),
+                  _StatDivider(),
+                  Expanded(
+                    child: _HeaderStat(
+                      val: _nivelLabel(perfil.totalReservas),
+                      label: 'Nivel',
+                    ),
+                  ),
+                  _StatDivider(),
+                  Expanded(
+                    child: _HeaderStat(
+                      val: 'S/${perfil.totalGastado.toStringAsFixed(0)}',
+                      label: 'Total',
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _StatDivider extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 1,
+      height: 36,
+      color: Colors.white.withValues(alpha: 0.12),
+    );
+  }
+}
+
+class _HeaderStat extends StatelessWidget {
+  final String val;
+  final String label;
+  const _HeaderStat({required this.val, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Text(
+          val,
+          style: GoogleFonts.bricolageGrotesque(
+            fontSize: 20,
+            fontWeight: FontWeight.w700,
+            color: Colors.white,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          label,
+          style: GoogleFonts.outfit(
+            fontSize: 12,
+            color: Colors.white.withValues(alpha: 0.5),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _PerfilTile extends StatelessWidget {
+  final Color iconBg;
+  final Color iconColor;
+  final IconData icon;
   final String label;
   final String value;
-  final IconData icon;
-  const _StatCard({
+
+  const _PerfilTile({
+    required this.iconBg,
+    required this.iconColor,
+    required this.icon,
     required this.label,
     required this.value,
-    required this.icon,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.line),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, size: 18, color: AppColors.green),
-          const SizedBox(height: 10),
-          Text(
+      margin: const EdgeInsets.only(bottom: 2),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+        leading: Container(
+          width: 42,
+          height: 42,
+          decoration: BoxDecoration(
+            color: iconBg,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Icon(icon, size: 20, color: iconColor),
+        ),
+        title: Text(
+          label,
+          style: GoogleFonts.outfit(
+            fontSize: 12,
+            color: AppColors.tx3,
+          ),
+        ),
+        subtitle: Container(
+          margin: const EdgeInsets.only(top: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          decoration: BoxDecoration(
+            color: const Color(0xFF0F2419),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Text(
             value,
-            style: GoogleFonts.bricolageGrotesque(
-              fontSize: 22,
-              fontWeight: FontWeight.w800,
-              color: AppColors.ink,
+            style: GoogleFonts.outfit(
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+              color: Colors.white,
             ),
           ),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            style: GoogleFonts.outfit(
-              fontSize: 12,
-              color: AppColors.ink2,
+        ),
+        trailing: const Icon(
+          Icons.arrow_forward_ios_rounded,
+          size: 14,
+          color: AppColors.tx3,
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ADMIN — tema oscuro premium (mismo lenguaje visual que dashboard)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _AdminPerfil extends ConsumerWidget {
+  final UsuarioModel perfil;
+  const _AdminPerfil({required this.perfil});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Scaffold(
+      backgroundColor: AppColors.abg,
+      body: Column(
+        children: [
+          // ── Header oscuro ────────────────────────────────────
+          _AdminHeader(perfil: perfil),
+
+          // ── Cuerpo ───────────────────────────────────────────
+          Expanded(
+            child: SingleChildScrollView(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 28, 20, 24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Sección cuenta
+                    _SectionLabel('Mi cuenta'),
+                    const SizedBox(height: 12),
+
+                    _AdminTile(
+                      iconColor: AppColors.aacc,
+                      iconBg: AppColors.aaccD,
+                      icon: Icons.email_outlined,
+                      label: 'Email',
+                      value: perfil.email,
+                    ),
+                    if (perfil.complejoId != null)
+                      _AdminTile(
+                        iconColor: AppColors.aamber,
+                        iconBg: const Color(0x1FFFB547),
+                        icon: Icons.stadium_outlined,
+                        label: 'Complejo gestionado',
+                        value: perfil.complejoId!,
+                      ),
+                    _AdminTile(
+                      iconColor: AppColors.ablu,
+                      iconBg: const Color(0x1F5B8EFF),
+                      icon: Icons.verified_user_outlined,
+                      label: 'Rol',
+                      value: 'Administrador',
+                      valueColor: AppColors.aacc,
+                    ),
+
+                    const SizedBox(height: 28),
+
+                    // Sección configuración
+                    _SectionLabel('Configuración'),
+                    const SizedBox(height: 12),
+
+                    _AdminTile(
+                      iconColor: AppColors.atx2,
+                      iconBg: AppColors.asur3,
+                      icon: Icons.notifications_none_rounded,
+                      label: 'Notificaciones push',
+                      value: 'Activadas',
+                    ),
+                    _AdminTile(
+                      iconColor: AppColors.atx2,
+                      iconBg: AppColors.asur3,
+                      icon: Icons.security_outlined,
+                      label: 'Seguridad',
+                      value: 'Contraseña y acceso',
+                    ),
+                    _AdminTile(
+                      iconColor: AppColors.atx2,
+                      iconBg: AppColors.asur3,
+                      icon: Icons.help_outline_rounded,
+                      label: 'Soporte técnico',
+                      value: 'soporte@altoque.pe',
+                    ),
+
+                    const SizedBox(height: 36),
+
+                    // Logout
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () =>
+                            ref.read(authNotifierProvider.notifier).logout(),
+                        icon: const Icon(
+                          Icons.logout_rounded,
+                          size: 18,
+                          color: AppColors.ared,
+                        ),
+                        label: Text(
+                          'Cerrar Sesión',
+                          style: GoogleFonts.outfit(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.ared,
+                          ),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          side: BorderSide(
+                              color: AppColors.ared.withValues(alpha: 0.35)),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
         ],
@@ -300,40 +507,268 @@ class _StatCard extends StatelessWidget {
   }
 }
 
-class _MenuTile extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-  const _MenuTile({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
+class _AdminHeader extends StatelessWidget {
+  final UsuarioModel perfil;
+  const _AdminHeader({required this.perfil});
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        child: Row(
-          children: [
-            Icon(icon, color: AppColors.ink2, size: 20),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Text(
-                label,
-                style: GoogleFonts.outfit(
-                  fontSize: 14,
-                  color: AppColors.ink,
+    return Container(
+      width: double.infinity,
+      decoration: const BoxDecoration(
+        color: AppColors.asur,
+        borderRadius: BorderRadius.only(
+          bottomLeft: Radius.circular(28),
+          bottomRight: Radius.circular(28),
+        ),
+        border: Border(
+          bottom: BorderSide(color: AppColors.abdr2),
+        ),
+      ),
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 24, 24, 28),
+          child: Column(
+            children: [
+              // Avatar
+              Container(
+                width: 76,
+                height: 76,
+                decoration: BoxDecoration(
+                  color: AppColors.aaccD,
+                  borderRadius: BorderRadius.circular(22),
+                  border: Border.all(
+                      color: AppColors.aacc.withValues(alpha: 0.35), width: 2),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.aacc.withValues(alpha: 0.2),
+                      blurRadius: 20,
+                      offset: const Offset(0, 6),
+                    ),
+                  ],
+                ),
+                child: Center(
+                  child: Text(
+                    perfil.iniciales,
+                    style: GoogleFonts.bricolageGrotesque(
+                      fontSize: 28,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.aacc,
+                    ),
+                  ),
                 ),
               ),
-            ),
-            Icon(Icons.chevron_right_rounded,
-                color: AppColors.ink3, size: 20),
-          ],
+
+              const SizedBox(height: 14),
+
+              // Nombre
+              Text(
+                perfil.nombre,
+                style: GoogleFonts.bricolageGrotesque(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.atx,
+                ),
+              ),
+
+              const SizedBox(height: 8),
+
+              // Badge admin
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+                decoration: BoxDecoration(
+                  color: AppColors.aaccD,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                      color: AppColors.aacc.withValues(alpha: 0.25)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 6,
+                      height: 6,
+                      decoration: BoxDecoration(
+                        color: AppColors.aacc,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: AppColors.aacc.withValues(alpha: 0.7),
+                            blurRadius: 6,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 7),
+                    Text(
+                      'Administrador · Al Toque',
+                      style: GoogleFonts.outfit(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.aacc,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 24),
+
+              // Stats admin
+              Row(
+                children: [
+                  Expanded(
+                    child: _AdminStat(
+                      val: perfil.complejoId != null ? '1' : '—',
+                      label: 'Complejo',
+                    ),
+                  ),
+                  _AdminStatDivider(),
+                  const Expanded(
+                    child: _AdminStat(val: 'Admin', label: 'Rol'),
+                  ),
+                  _AdminStatDivider(),
+                  const Expanded(
+                    child: _AdminStat(val: 'Activo', label: 'Estado'),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 }
+
+class _AdminStatDivider extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 1,
+      height: 36,
+      color: AppColors.abdr2,
+    );
+  }
+}
+
+class _AdminStat extends StatelessWidget {
+  final String val;
+  final String label;
+  const _AdminStat({required this.val, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Text(
+          val,
+          style: GoogleFonts.bricolageGrotesque(
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+            color: AppColors.aacc,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          label,
+          style: GoogleFonts.outfit(
+            fontSize: 12,
+            color: AppColors.atx2,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SectionLabel extends StatelessWidget {
+  final String text;
+  const _SectionLabel(this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text.toUpperCase(),
+      style: GoogleFonts.outfit(
+        fontSize: 11,
+        fontWeight: FontWeight.w600,
+        color: AppColors.atx3,
+        letterSpacing: 1.2,
+      ),
+    );
+  }
+}
+
+class _AdminTile extends StatelessWidget {
+  final Color iconBg;
+  final Color iconColor;
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color? valueColor;
+
+  const _AdminTile({
+    required this.iconBg,
+    required this.iconColor,
+    required this.icon,
+    required this.label,
+    required this.value,
+    this.valueColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: AppColors.asur2,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.abdr2),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: iconBg,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, size: 20, color: iconColor),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: GoogleFonts.outfit(
+                    fontSize: 11,
+                    color: AppColors.atx3,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  value,
+                  style: GoogleFonts.outfit(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: valueColor ?? AppColors.atx,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Icon(Icons.arrow_forward_ios_rounded,
+              size: 12, color: AppColors.atx3),
+        ],
+      ),
+    );
+  }
+}
+

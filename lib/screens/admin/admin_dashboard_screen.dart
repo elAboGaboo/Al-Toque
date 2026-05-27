@@ -4,285 +4,381 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:intl/intl.dart';
 
 import '../../core/theme/app_colors.dart';
-import '../../core/utils/precio_utils.dart';
 import '../../providers/auth_provider.dart';
-import '../../providers/flash_slots_provider.dart';
-import '../../providers/partidos_provider.dart';
-import '../../providers/reservas_provider.dart';
+import '../../providers/complejos_provider.dart';
 
 class AdminDashboardScreen extends ConsumerWidget {
   const AdminDashboardScreen({super.key});
 
+  Future<void> _confirmarLogout(BuildContext context, WidgetRef ref) async {
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.asur,
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          '¿Cerrar sesión?',
+          style: GoogleFonts.bricolageGrotesque(
+            fontWeight: FontWeight.w700,
+            color: AppColors.atx,
+          ),
+        ),
+        content: Text(
+          'Saldrás del panel de administración.',
+          style: GoogleFonts.plusJakartaSans(
+              fontSize: 13, color: AppColors.atx2),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text('Cancelar',
+                style: GoogleFonts.outfit(color: AppColors.atx2)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text('Cerrar sesión',
+                style: GoogleFonts.outfit(
+                    color: AppColors.ared,
+                    fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+    if (confirmar == true) {
+      await ref.read(authNotifierProvider.notifier).logout();
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final complejoId =
-        ref.watch(complejoIdAdminProvider) ?? 'demo_complejo';
-    final reservasAsync =
-        ref.watch(reservasComplejoProvider(complejoId));
-    final flashAsync =
-        ref.watch(flashSlotsComplejoProvider(complejoId));
-    final partidosAsync =
-        ref.watch(partidosComplejoProvider(complejoId));
-    final perfil = ref.watch(perfilUsuarioProvider).valueOrNull;
+    final hoy = DateFormat("EEEE d 'de' MMMM yyyy", 'es_PE').format(
+      DateTime.now(),
+    );
 
-    return Theme(
-      data: ThemeData.dark().copyWith(
-        scaffoldBackgroundColor: AppColors.adminBg,
-      ),
-      child: Scaffold(
-        backgroundColor: AppColors.adminBg,
-        body: CustomScrollView(
-          slivers: [
-            // Header
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(24, 32, 24, 8),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Panel de control',
-                            style: GoogleFonts.bricolageGrotesque(
-                              fontSize: 26,
-                              fontWeight: FontWeight.w800,
-                              color: Colors.white,
-                            ),
-                          ),
-                          Text(
-                            perfil?.nombre ?? 'Administrador',
-                            style: GoogleFonts.outfit(
-                              fontSize: 14,
-                              color: Colors.white.withValues(alpha: 0.5),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: AppColors.adminS2,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Icon(Icons.notifications_outlined,
-                          color: Colors.white, size: 20),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+    // Nombre real del complejo desde Firestore
+    final complejoId = ref.watch(complejoIdProvider);
+    final complejoAsync =
+        complejoId != null ? ref.watch(complejoProvider(complejoId)) : null;
+    final nombreComplejo =
+        complejoAsync?.asData?.value?.nombre ?? 'Mi Complejo';
 
-            // KPIs
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: reservasAsync.when(
-                  loading: () => const _KpiSkeleton(),
-                  error: (_, __) => const SizedBox.shrink(),
-                  data: (reservas) {
-                    final hoy = DateTime.now();
-                    final reservasHoy = reservas
-                        .where((r) =>
-                            r.fecha.day == hoy.day &&
-                            r.fecha.month == hoy.month &&
-                            r.fecha.year == hoy.year)
-                        .toList();
-                    final ingresos = reservas
-                        .where((r) => r.estaConfirmada)
-                        .fold(0.0, (s, r) => s + r.precioTotal);
-                    final flash = flashAsync.valueOrNull ?? [];
-                    final partidos = partidosAsync.valueOrNull ?? [];
-
-                    return Column(
+    return Scaffold(
+      backgroundColor: AppColors.abg,
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // ── Header ───────────────────────────────
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _KpiCard(
-                                label: 'Reservas hoy',
-                                valor: '${reservasHoy.length}',
-                                icono: '📋',
-                                color: AppColors.adminGreen,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: _KpiCard(
-                                label: 'Ingresos totales',
-                                valor: PrecioUtils.formatear(ingresos),
-                                icono: '💰',
-                                color: AppColors.adminGreen,
-                              ),
-                            ),
-                          ],
+                        Text(
+                          'Dashboard',
+                          style: GoogleFonts.bricolageGrotesque(
+                            fontSize: 24,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.atx,
+                            letterSpacing: -0.5,
+                          ),
                         ),
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _KpiCard(
-                                label: 'Flash activos',
-                                valor: '${flash.where((f) => f.isActivo).length}',
-                                icono: '⚡',
-                                color: AppColors.adminFlash,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: _KpiCard(
-                                label: 'Partidos abiertos',
-                                valor:
-                                    '${partidos.where((p) => p.estaAbierto).length}',
-                                icono: '⚽',
-                                color: AppColors.adminParty,
-                              ),
-                            ),
-                          ],
+                        const SizedBox(height: 2),
+                        Text(
+                          '$nombreComplejo · $hoy',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 12,
+                            color: AppColors.atx2,
+                            fontWeight: FontWeight.w400,
+                          ),
                         ),
                       ],
-                    );
-                  },
-                ),
-              ),
-            ),
-
-            // Accesos rápidos
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Text(
-                  'Accesos rápidos',
-                  style: GoogleFonts.outfit(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.white.withValues(alpha: 0.5),
+                    ),
                   ),
-                ),
+                  // Botón Mi Complejo (engranaje)
+                  GestureDetector(
+                    onTap: () => context.push('/admin/mi-complejo'),
+                    child: Container(
+                      width: 38,
+                      height: 38,
+                      margin: const EdgeInsets.only(right: 8),
+                      decoration: BoxDecoration(
+                        color: AppColors.asur,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: AppColors.abdr),
+                      ),
+                      child: const Icon(
+                        Icons.settings_outlined,
+                        color: AppColors.atx2,
+                        size: 18,
+                      ),
+                    ),
+                  ),
+                  // Botón cerrar sesión
+                  GestureDetector(
+                    onTap: () => _confirmarLogout(context, ref),
+                    child: Container(
+                      width: 38,
+                      height: 38,
+                      decoration: BoxDecoration(
+                        color: AppColors.ared.withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                            color: AppColors.ared.withValues(alpha: 0.25)),
+                      ),
+                      child: const Icon(
+                        Icons.logout_rounded,
+                        color: AppColors.ared,
+                        size: 18,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: GridView.count(
-                  crossAxisCount: 3,
-                  crossAxisSpacing: 10,
-                  mainAxisSpacing: 10,
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  childAspectRatio: 1.1,
-                  children: [
-                    _AccesoRapido(
-                      label: 'Horarios',
-                      icono: Icons.calendar_month_rounded,
-                      color: AppColors.adminGreen,
-                      onTap: () => context.go('/admin/horarios'),
-                    ),
-                    _AccesoRapido(
-                      label: 'Flash Slots',
-                      icono: Icons.flash_on_rounded,
-                      color: AppColors.adminFlash,
-                      onTap: () => context.go('/admin/flash-slots'),
-                    ),
-                    _AccesoRapido(
-                      label: 'Partidos',
-                      icono: Icons.group_rounded,
-                      color: AppColors.adminParty,
-                      onTap: () => context.go('/admin/partidos'),
-                    ),
-                    _AccesoRapido(
-                      label: 'IA',
-                      icono: Icons.auto_awesome_rounded,
-                      color: const Color(0xFFA78BFA),
-                      onTap: () => context.go('/admin/ia'),
-                    ),
-                    _AccesoRapido(
-                      label: 'Ingresos',
-                      icono: Icons.bar_chart_rounded,
-                      color: AppColors.adminGreen,
-                      onTap: () => context.go('/admin/ingresos'),
-                    ),
-                    _AccesoRapido(
-                      label: 'Cerrar sesión',
-                      icono: Icons.logout_rounded,
-                      color: AppColors.adminRed,
-                      onTap: () async {
-                        await ref
-                            .read(authNotifierProvider.notifier)
-                            .logout();
-                        if (context.mounted) context.go('/login');
-                      },
-                    ),
-                  ],
-                ),
-              ),
-            ),
 
-            // Gráfica de ingresos
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: _RevenueChart(
-                  reservasAsync: reservasAsync,
-                ),
-              ),
-            ),
+              const SizedBox(height: 20),
 
-            const SliverToBoxAdapter(child: SizedBox(height: 32)),
-          ],
+              // ── Banner: complejo no configurado ──────
+              if (complejoId == null)
+                _BannerSetupComplejo(),
+
+              // ── Accesos rápidos (solo si tiene complejo) ─
+              if (complejoId != null) ...[
+                const SizedBox(height: 4),
+                _QuickActionsRow(complejoId: complejoId),
+                const SizedBox(height: 16),
+              ],
+
+              // ── Stat cards ───────────────────────────
+              GridView.count(
+                crossAxisCount: 2,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                crossAxisSpacing: 10,
+                mainAxisSpacing: 10,
+                childAspectRatio: 1.2,
+                children: const [
+                  _StatCard(
+                    icon: Icons.calendar_today_rounded,
+                    value: '24',
+                    label: 'Reservas hoy',
+                    delta: '↑ 18% vs ayer',
+                    deltaPositive: true,
+                  ),
+                  _StatCard(
+                    icon: Icons.attach_money_rounded,
+                    value: 'S/960',
+                    label: 'Ingresos hoy',
+                    delta: '↑ 24%',
+                    deltaPositive: true,
+                  ),
+                  _StatCard(
+                    icon: Icons.monitor_heart_outlined,
+                    value: '78%',
+                    label: 'Ocupación',
+                    delta: '↑ 8%',
+                    deltaPositive: true,
+                  ),
+                  _StatCard(
+                    icon: Icons.cancel_outlined,
+                    value: '2',
+                    label: 'Canceladas',
+                    delta: '↑ 1 hoy',
+                    deltaPositive: false,
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 16),
+
+              // ── Bar chart Predicción IA ──────────────
+              const _PrediccionCard(),
+
+              const SizedBox(height: 16),
+
+              // ── Donuts ───────────────────────────────
+              const Row(
+                children: [
+                  Expanded(
+                    child: _DonutCard(
+                      title: 'Ocupación',
+                      value: '78%',
+                      sub: 'hoy',
+                      color: AppColors.aacc,
+                      percent: 0.78,
+                    ),
+                  ),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: _DonutCard(
+                      title: 'Meta semanal',
+                      value: 'S/3,840',
+                      sub: 'de S/5,000',
+                      color: AppColors.ablu,
+                      percent: 0.768,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-// ── Widgets ──────────────────────────────────────────────────
+// ═════════════════════════════════════════════════════
+//  Quick actions row
+// ═════════════════════════════════════════════════════
+class _QuickActionsRow extends StatelessWidget {
+  final String complejoId;
+  const _QuickActionsRow({required this.complejoId});
 
-class _KpiCard extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final actions = [
+      (
+        Icons.stadium_rounded,
+        'Mis Canchas',
+        AppColors.aacc,
+        AppColors.aaccD,
+        () => context.push('/admin/canchas'),
+      ),
+      (
+        Icons.flash_on_rounded,
+        'Flash Slots',
+        AppColors.aamber,
+        AppColors.aamber.withValues(alpha: 0.12),
+        () => context.push('/admin/flash-slots'),
+      ),
+      (
+        Icons.bar_chart_rounded,
+        'Ingresos',
+        AppColors.ablu,
+        AppColors.ablu.withValues(alpha: 0.12),
+        () => context.push('/admin/ingresos'),
+      ),
+      (
+        Icons.sports_soccer_rounded,
+        'Partidos',
+        AppColors.atx2,
+        AppColors.asur2,
+        () => context.push('/admin/partidos'),
+      ),
+    ];
+
+    return Row(
+      children: actions
+          .map((a) => Expanded(
+                child: GestureDetector(
+                  onTap: a.$5,
+                  child: Container(
+                    margin: const EdgeInsets.only(right: 8),
+                    padding: const EdgeInsets.symmetric(
+                        vertical: 10, horizontal: 8),
+                    decoration: BoxDecoration(
+                      color: a.$4,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                          color: a.$3.withValues(alpha: 0.25)),
+                    ),
+                    child: Column(
+                      children: [
+                        Icon(a.$1, color: a.$3, size: 20),
+                        const SizedBox(height: 4),
+                        Text(
+                          a.$2,
+                          textAlign: TextAlign.center,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.outfit(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w600,
+                            color: a.$3,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ))
+          .toList(),
+    );
+  }
+}
+
+// ═════════════════════════════════════════════════════
+//  Stat card
+// ═════════════════════════════════════════════════════
+class _StatCard extends StatelessWidget {
+  final IconData icon;
+  final String value;
   final String label;
-  final String valor;
-  final String icono;
-  final Color color;
-
-  const _KpiCard({
+  final String delta;
+  final bool deltaPositive;
+  const _StatCard({
+    required this.icon,
+    required this.value,
     required this.label,
-    required this.valor,
-    required this.icono,
-    required this.color,
+    required this.delta,
+    required this.deltaPositive,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: AppColors.adminS1,
+        color: AppColors.asur,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.adminS3),
+        border: Border.all(color: AppColors.abdr),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(icono, style: const TextStyle(fontSize: 22)),
-          const SizedBox(height: 8),
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: AppColors.aaccD,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, size: 16, color: AppColors.aacc),
+          ),
+          const Spacer(),
           Text(
-            valor,
+            value,
             style: GoogleFonts.bricolageGrotesque(
-              fontSize: 22,
+              fontSize: 26,
               fontWeight: FontWeight.w800,
-              color: color,
+              color: AppColors.atx,
+              letterSpacing: -1,
+              height: 1,
             ),
           ),
+          const SizedBox(height: 2),
           Text(
             label,
-            style: GoogleFonts.outfit(
-              fontSize: 12,
-              color: Colors.white.withValues(alpha: 0.5),
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 11,
+              color: AppColors.atx2,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            delta,
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              color: deltaPositive ? AppColors.aacc : AppColors.ared,
             ),
           ),
         ],
@@ -291,214 +387,238 @@ class _KpiCard extends StatelessWidget {
   }
 }
 
-class _KpiSkeleton extends StatelessWidget {
-  const _KpiSkeleton();
+// ═════════════════════════════════════════════════════
+//  Predicción IA — bar chart agrupado
+// ═════════════════════════════════════════════════════
+class _PrediccionCard extends StatelessWidget {
+  const _PrediccionCard();
 
   @override
   Widget build(BuildContext context) {
-    return Column(
+    final dias = ['Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sa', 'Do'];
+    // Datos sintéticos: real (ayer) vs predicción IA
+    final real = [12.0, 14.0, 11.0, 16.0, 22.0, 26.0, 18.0];
+    final pred = [13.0, 15.0, 12.0, 17.0, 24.0, 28.0, 20.0];
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+      decoration: BoxDecoration(
+        color: AppColors.asur,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.abdr),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                'Predicción IA',
+                style: GoogleFonts.bricolageGrotesque(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.atx,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                'Precisión 92%',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.aacc,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            height: 130,
+            child: BarChart(
+              BarChartData(
+                alignment: BarChartAlignment.spaceAround,
+                maxY: 32,
+                barTouchData: BarTouchData(enabled: false),
+                titlesData: FlTitlesData(
+                  leftTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false)),
+                  rightTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false)),
+                  topTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false)),
+                  bottomTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      reservedSize: 22,
+                      getTitlesWidget: (v, _) => Text(
+                        dias[v.toInt()],
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 10,
+                          color: AppColors.atx2,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                gridData: const FlGridData(show: false),
+                borderData: FlBorderData(show: false),
+                barGroups: [
+                  for (int i = 0; i < dias.length; i++)
+                    BarChartGroupData(
+                      x: i,
+                      barsSpace: 3,
+                      barRods: [
+                        BarChartRodData(
+                          toY: real[i],
+                          color: AppColors.atx3,
+                          width: 9,
+                          borderRadius:
+                              const BorderRadius.vertical(top: Radius.circular(3)),
+                        ),
+                        BarChartRodData(
+                          toY: pred[i],
+                          color: AppColors.aacc,
+                          width: 9,
+                          borderRadius:
+                              const BorderRadius.vertical(top: Radius.circular(3)),
+                        ),
+                      ],
+                    ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          // Leyenda
+          const Row(
+            children: [
+              _LegendDot(color: AppColors.atx3, label: 'Real'),
+              SizedBox(width: 14),
+              _LegendDot(color: AppColors.aacc, label: 'Predicción IA'),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LegendDot extends StatelessWidget {
+  final Color color;
+  final String label;
+  const _LegendDot({required this.color, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Row(
-          children: [
-            Expanded(child: _SkeletonCard()),
-            const SizedBox(width: 12),
-            Expanded(child: _SkeletonCard()),
-          ],
+        Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
         ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(child: _SkeletonCard()),
-            const SizedBox(width: 12),
-            Expanded(child: _SkeletonCard()),
-          ],
+        const SizedBox(width: 6),
+        Text(
+          label,
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 10,
+            color: AppColors.atx2,
+          ),
         ),
       ],
     );
   }
 }
 
-class _SkeletonCard extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 90,
-      decoration: BoxDecoration(
-        color: AppColors.adminS1,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.adminS3),
-      ),
-    );
-  }
-}
-
-class _AccesoRapido extends StatelessWidget {
-  final String label;
-  final IconData icono;
+// ═════════════════════════════════════════════════════
+//  Donut card
+// ═════════════════════════════════════════════════════
+class _DonutCard extends StatelessWidget {
+  final String title;
+  final String value;
+  final String sub;
   final Color color;
-  final VoidCallback onTap;
-
-  const _AccesoRapido({
-    required this.label,
-    required this.icono,
+  final double percent;
+  const _DonutCard({
+    required this.title,
+    required this.value,
+    required this.sub,
     required this.color,
-    required this.onTap,
+    required this.percent,
   });
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        decoration: BoxDecoration(
-          color: AppColors.adminS1,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: AppColors.adminS3),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(icono, color: color, size: 22),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              label,
-              style: GoogleFonts.outfit(
-                fontSize: 11,
-                fontWeight: FontWeight.w500,
-                color: Colors.white.withValues(alpha: 0.7),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _RevenueChart extends StatelessWidget {
-  final AsyncValue reservasAsync;
-
-  const _RevenueChart({required this.reservasAsync});
-
-  @override
-  Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
       decoration: BoxDecoration(
-        color: AppColors.adminS1,
+        color: AppColors.asur,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.adminS3),
+        border: Border.all(color: AppColors.abdr),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Ingresos — últimos 7 días',
-            style: GoogleFonts.outfit(
-              fontSize: 14,
+            title,
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 12,
               fontWeight: FontWeight.w600,
-              color: Colors.white,
+              color: AppColors.atx,
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 12),
           SizedBox(
-            height: 160,
-            child: reservasAsync.when(
-              loading: () => const Center(
-                child: CircularProgressIndicator(
-                    color: AppColors.adminGreen),
-              ),
-              error: (_, __) => const SizedBox.shrink(),
-              data: (reservas) {
-                // Agrupa por día de la semana
-                final ahora = DateTime.now();
-                final spots = <FlSpot>[];
-                for (int i = 6; i >= 0; i--) {
-                  final dia = ahora.subtract(Duration(days: i));
-                  final ing = (reservas as List)
-                      .where((r) =>
-                          r.fecha.day == dia.day &&
-                          r.fecha.month == dia.month &&
-                          r.estaConfirmada)
-                      .fold(0.0, (s, r) => s + r.precioTotal);
-                  spots.add(FlSpot((6 - i).toDouble(), ing));
-                }
-
-                return LineChart(
-                  LineChartData(
-                    gridData: FlGridData(
-                      show: true,
-                      drawVerticalLine: false,
-                      getDrawingHorizontalLine: (_) => const FlLine(
-                        color: Color(0xFF1E293B),
-                        strokeWidth: 1,
+            height: 100,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                PieChart(
+                  PieChartData(
+                    sectionsSpace: 0,
+                    centerSpaceRadius: 32,
+                    startDegreeOffset: -90,
+                    sections: [
+                      PieChartSectionData(
+                        value: percent,
+                        color: color,
+                        radius: 12,
+                        showTitle: false,
                       ),
-                    ),
-                    titlesData: FlTitlesData(
-                      leftTitles: AxisTitles(
-                        sideTitles: SideTitles(
-                          showTitles: true,
-                          reservedSize: 48,
-                          getTitlesWidget: (v, _) => Text(
-                            'S/${v.toInt()}',
-                            style: GoogleFonts.outfit(
-                              fontSize: 10,
-                              color: Colors.white.withValues(alpha: 0.4),
-                            ),
-                          ),
-                        ),
-                      ),
-                      bottomTitles: AxisTitles(
-                        sideTitles: SideTitles(
-                          showTitles: true,
-                          getTitlesWidget: (v, _) {
-                            final dias = [
-                              'L', 'M', 'X', 'J', 'V', 'S', 'D'
-                            ];
-                            final day = ahora
-                                .subtract(Duration(days: 6 - v.toInt()))
-                                .weekday;
-                            return Text(
-                              dias[day - 1],
-                              style: GoogleFonts.outfit(
-                                fontSize: 11,
-                                color: Colors.white.withValues(alpha: 0.4),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                      topTitles: const AxisTitles(
-                          sideTitles: SideTitles(showTitles: false)),
-                      rightTitles: const AxisTitles(
-                          sideTitles: SideTitles(showTitles: false)),
-                    ),
-                    borderData: FlBorderData(show: false),
-                    lineBarsData: [
-                      LineChartBarData(
-                        spots: spots,
-                        isCurved: true,
-                        color: AppColors.adminGreen,
-                        barWidth: 2.5,
-                        dotData: const FlDotData(show: false),
-                        belowBarData: BarAreaData(
-                          show: true,
-                          color:
-                              AppColors.adminGreen.withValues(alpha: 0.1),
-                        ),
+                      PieChartSectionData(
+                        value: 1 - percent,
+                        color: AppColors.abdr2,
+                        radius: 12,
+                        showTitle: false,
                       ),
                     ],
                   ),
-                );
-              },
+                ),
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      value,
+                      style: GoogleFonts.bricolageGrotesque(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                        color: color,
+                        height: 1,
+                        letterSpacing: -0.5,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      sub,
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 9,
+                        color: AppColors.atx2,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
         ],
@@ -506,3 +626,67 @@ class _RevenueChart extends StatelessWidget {
     );
   }
 }
+
+// ═════════════════════════════════════════════════════
+//  Banner — complejo no configurado
+// ═════════════════════════════════════════════════════
+class _BannerSetupComplejo extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => context.push('/admin/setup-complejo'),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 16),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.aaccD,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.aacc.withValues(alpha: 0.4)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: AppColors.aacc.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(Icons.stadium_rounded,
+                  color: AppColors.aacc, size: 22),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Configura tu complejo',
+                    style: GoogleFonts.bricolageGrotesque(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.aacc,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Registra tu campo deportivo para empezar a recibir reservas',
+                    style: GoogleFonts.outfit(
+                      fontSize: 12,
+                      color: AppColors.atx2,
+                      height: 1.4,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Icon(Icons.arrow_forward_ios_rounded,
+                color: AppColors.aacc, size: 14),
+          ],
+        ),
+      ),
+    );
+  }
+}
+

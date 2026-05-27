@@ -3,10 +3,9 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter_localizations/flutter_localizations.dart'; 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
-
 import 'core/router/app_router.dart';
 import 'core/services/deep_link_service.dart';
 import 'core/services/notification_service.dart';
@@ -53,7 +52,7 @@ void main() async {
   // Solicitar permisos Android en runtime
   await _solicitarPermisos();
 
-  runApp(const ProviderScope(child: CanchApp()));
+  runApp(const ProviderScope(child: AlToqueApp()));
 }
 
 /// Solicita permisos de ubicación y notificaciones en Android runtime.
@@ -75,15 +74,15 @@ Future<void> _solicitarPermisos() async {
   }
 }
 
-class CanchApp extends ConsumerWidget {
-  const CanchApp({super.key});
+class AlToqueApp extends ConsumerWidget {
+  const AlToqueApp({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(appRouterProvider);
 
     return MaterialApp.router(
-      title: 'CanchApp',
+      title: 'Al Toque',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
@@ -91,10 +90,8 @@ class CanchApp extends ConsumerWidget {
       themeMode: ThemeMode.light,
       routerConfig: router,
       localizationsDelegates: const [
-        // Soporte completo es/en para Material/Widgets/Cupertino
         GlobalMaterialLocalizations.delegate,
         GlobalWidgetsLocalizations.delegate,
-        GlobalCupertinoLocalizations.delegate,
       ],
       supportedLocales: const [
         Locale('es', 'PE'),

@@ -4,11 +4,14 @@ class CanchaModel {
   final String id;
   final String complejoId;
   final String nombre;
-  final String deporte;    // futbol5 | futbol7 | basquet | voley
-  final String superficie; // sintetico | cemento | grass
+  final String deporte;      // futbol5 | futbol7 | basquet | voley
+  final String superficie;   // sintetico | cemento | grass
   final int capacidad;
   final double precioBase;
   final bool activa;
+  final bool techada;        // cubierta / indoor
+  final bool iluminacion;    // iluminación nocturna
+  final String descripcion;
 
   const CanchaModel({
     required this.id,
@@ -19,6 +22,9 @@ class CanchaModel {
     required this.capacidad,
     required this.precioBase,
     required this.activa,
+    this.techada = false,
+    this.iluminacion = false,
+    this.descripcion = '',
   });
 
   String get deporteLabel {
@@ -61,6 +67,9 @@ class CanchaModel {
       capacidad: (d['capacidad'] as num?)?.toInt() ?? 10,
       precioBase: (d['precioBase'] as num?)?.toDouble() ?? 0,
       activa: d['activa'] as bool? ?? true,
+      techada: d['techada'] as bool? ?? false,
+      iluminacion: d['iluminacion'] as bool? ?? false,
+      descripcion: d['descripcion'] as String? ?? '',
     );
   }
 
@@ -68,18 +77,25 @@ class CanchaModel {
       CanchaModel.fromDoc(doc, complejoId: complejoId);
 
   Map<String, dynamic> toMap() => {
+        'complejoId': complejoId,
         'nombre': nombre,
         'deporte': deporte,
         'superficie': superficie,
         'capacidad': capacidad,
         'precioBase': precioBase,
         'activa': activa,
+        'techada': techada,
+        'iluminacion': iluminacion,
+        'descripcion': descripcion,
       };
 
   CanchaModel copyWith({
     String? nombre,
     double? precioBase,
     bool? activa,
+    bool? techada,
+    bool? iluminacion,
+    String? descripcion,
   }) =>
       CanchaModel(
         id: id,
@@ -90,5 +106,8 @@ class CanchaModel {
         capacidad: capacidad,
         precioBase: precioBase ?? this.precioBase,
         activa: activa ?? this.activa,
+        techada: techada ?? this.techada,
+        iluminacion: iluminacion ?? this.iluminacion,
+        descripcion: descripcion ?? this.descripcion,
       );
 }

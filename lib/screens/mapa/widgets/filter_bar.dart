@@ -31,7 +31,7 @@ class MapFilterBar extends ConsumerWidget {
           final (filter, label, color) = filters[i];
           final isSelected = current == filter;
           return GestureDetector(
-            onTap: () => ref.read(mapFilterProvider.notifier).state = filter,
+            onTap: () => ref.read(mapFilterProvider.notifier).setFilter(filter),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 200),
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),

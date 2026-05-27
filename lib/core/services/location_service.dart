@@ -1,6 +1,9 @@
 // core/services/location_service.dart
+import 'dart:async';
+
+import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 class LocationService {
@@ -33,12 +36,25 @@ class LocationService {
       final pos = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.high,
-          timeLimit: Duration(seconds: 10),
         ),
-      );
+      ).timeout(const Duration(seconds: 15));
       return LatLng(pos.latitude, pos.longitude);
     } catch (_) {
       return _defaultPos;
+    }
+  }
+
+  /// Convierte coordenadas en una dirección legible.
+  Future<String> obtenerDireccion(LatLng pos) async {
+    try {
+      final placemarks = await placemarkFromCoordinates(pos.latitude, pos.longitude);
+      if (placemarks.isNotEmpty) {
+        final p = placemarks.first;
+        return "${p.street}, ${p.locality}, ${p.subAdministrativeArea}";
+      }
+      return "Dirección desconocida";
+    } catch (_) {
+      return "Error al obtener dirección";
     }
   }
 

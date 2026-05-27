@@ -24,24 +24,24 @@ final usuariosRepositoryProvider = Provider<UsuariosRepository>(
 /// Perfil Firestore del usuario autenticado.
 final perfilUsuarioProvider = StreamProvider<UsuarioModel?>((ref) {
   final authState = ref.watch(authStateProvider);
-  final uid = authState.valueOrNull?.uid;
+  final uid = authState.asData?.value?.uid;
   if (uid == null) return const Stream.empty();
   return ref.watch(usuariosRepositoryProvider).streamUsuario(uid);
 });
 
 /// UID del usuario actual (acceso rápido).
 final uidProvider = Provider<String?>((ref) {
-  return ref.watch(authStateProvider).valueOrNull?.uid;
+  return ref.watch(authStateProvider).asData?.value?.uid;
 });
 
-/// True si el usuario es admin.
-final esAdminProvider = Provider<bool>((ref) {
-  return ref.watch(perfilUsuarioProvider).valueOrNull?.esAdmin ?? false;
+/// True si el usuario es dueño de un complejo.
+final esDuenoProvider = Provider<bool>((ref) {
+  return ref.watch(perfilUsuarioProvider).asData?.value?.esDueno ?? false;
 });
 
-/// complejoId del admin logueado (null si es jugador).
-final complejoIdAdminProvider = Provider<String?>((ref) {
-  return ref.watch(perfilUsuarioProvider).valueOrNull?.complejoId;
+/// complejoId del dueño logueado (null si es jugador).
+final complejoIdProvider = Provider<String?>((ref) {
+  return ref.watch(perfilUsuarioProvider).asData?.value?.complejoId;
 });
 
 // ── Notifier para operaciones de auth ─────────────────────────
@@ -76,12 +76,17 @@ class AuthNotifier extends AsyncNotifier<void> {
         password: password,
       );
       uid = cred.user!.uid;
-      await ref.read(usuariosRepositoryProvider).crearPerfil(
-            uid: uid!,
-            nombre: nombre,
-            email: email.trim(),
-            rol: rol,
-          );
+      try {
+        await ref.read(usuariosRepositoryProvider).crearPerfil(
+              uid: uid!,
+              nombre: nombre,
+              email: email.trim(),
+              rol: rol,
+            );
+      } catch (_) {
+        await cred.user!.delete();
+        rethrow;
+      }
     });
     return uid;
   }

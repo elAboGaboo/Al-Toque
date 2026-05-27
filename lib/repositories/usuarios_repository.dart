@@ -60,6 +60,37 @@ class UsuariosRepository {
     });
   }
 
+  /// Vincula el complejoId al perfil del dueño después del setup inicial.
+  Future<void> actualizarComplejoId(String uid, String complejoId) async {
+    await _db.doc(FirestorePaths.usuarioDoc(uid)).set({
+      'complejoId': complejoId,
+      'complejosIds': FieldValue.arrayUnion([complejoId]),
+    }, SetOptions(merge: true));
+  }
+
+  /// Actualiza el nivel de juego del jugador.
+  Future<void> actualizarNivel(String uid, String nivel) async {
+    await _db.doc(FirestorePaths.usuarioDoc(uid)).update({'nivel': nivel});
+  }
+
+  /// Registra una calificación recibida por el jugador (del dueño del complejo).
+  Future<void> registrarCalificacion(String uid, double calificacion) async {
+    await _db.runTransaction((tx) async {
+      final ref = _db.doc(FirestorePaths.usuarioDoc(uid));
+      final snap = await tx.get(ref);
+      if (!snap.exists) return;
+      final data = snap.data() as Map<String, dynamic>;
+      final total = (data['totalCalificaciones'] as num?)?.toInt() ?? 0;
+      final actual = (data['calificacion'] as num?)?.toDouble() ?? 0;
+      final nuevoTotal = total + 1;
+      final nuevo = ((actual * total) + calificacion) / nuevoTotal;
+      tx.update(ref, {
+        'calificacion': double.parse(nuevo.toStringAsFixed(1)),
+        'totalCalificaciones': nuevoTotal,
+      });
+    });
+  }
+
   /// Crea un perfil inicial al registrarse.
   Future<void> crearPerfil({
     required String uid,
@@ -68,19 +99,21 @@ class UsuariosRepository {
     String rol = 'jugador',
     String? complejoId,
   }) async {
-    final ahora = DateTime.now();
     await _db.doc(FirestorePaths.usuarioDoc(uid)).set({
       'nombre': nombre,
       'email': email,
       'telefono': '',
       'avatarUrl': '',
       'rol': rol,
-      if (complejoId != null) 'complejoId': complejoId,
+      'complejoId': complejoId,
       'deporteFavorito': 'futbol5',
+      'nivel': 'principiante',
       'totalReservas': 0,
       'totalGastado': 0.0,
+      'calificacion': 0.0,
+      'totalCalificaciones': 0,
       'fcmToken': '',
-      'creadoEn': Timestamp.fromDate(ahora),
+      'creadoEn': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
   }
 }
