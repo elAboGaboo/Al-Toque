@@ -92,15 +92,25 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       }
 
       final perfil = perfilAsync.asData!.value;
+      final isAdminRoute = loc.startsWith('/admin');
 
-      // Usuario autenticado pero sin documento en Firestore (caso edge)
+      // Usuario autenticado pero sin documento en Firestore (perfil null).
+      // Posible en: registro parcial, red lenta, doc borrado manualmente.
+      // NO redirigir desde rutas de app (complejo, reserva, etc.) porque
+      // causaría pantalla en blanco al navegar. Solo bloquear admin routes
+      // o rutas públicas donde el perfil es obligatorio.
       if (perfil == null) {
         debugPrint('[Router] auth=true · sin perfil en Firestore · loc=$loc');
-        return isPublic ? null : '/welcome';
+        // Admin requiere perfil completo → welcome para re-login / re-registro
+        if (isAdminRoute) return '/welcome';
+        // Rutas públicas: redirigir al inicio
+        if (isPublic || loc == '/loading') return '/inicio';
+        // Rutas de usuario (complejo, reserva, etc.): dejar pasar
+        // El perfil puede llegar en cualquier momento (stream tarda en emitir)
+        return null;
       }
 
       final esDueno = perfil.esDueno;
-      final isAdminRoute = loc.startsWith('/admin');
 
       debugPrint('[Router] auth=true · uid=${currentUser.uid.substring(0, 6)}… · '
           'rol="${perfil.rol}" · esDueno=$esDueno · loc=$loc');
@@ -114,6 +124,15 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         }
         // Rutas dev/seed siempre accesibles (para poblar BD de prueba)
         if (loc.startsWith('/dev/')) return null;
+        // Rutas de detalle/flujo de usuario: dueños también pueden acceder
+        // (p.ej. para previsualizar un complejo o reservar como jugador)
+        if (loc.startsWith('/complejo/') ||
+            loc.startsWith('/reservar/') ||
+            loc.startsWith('/confirmacion/') ||
+            loc.startsWith('/partido/') ||
+            loc == '/crear-partido') {
+          return null;
+        }
         if (isPublic || !isAdminRoute) return '/admin/dashboard';
         return null;
       }

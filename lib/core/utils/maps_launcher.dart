@@ -2,51 +2,45 @@
 import 'package:flutter/foundation.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-/// Abre la app de mapas del dispositivo con las coordenadas dadas.
-///
-/// Estrategia:
-///   1. Intenta `geo:lat,lng?q=lat,lng` → abre Google Maps nativo (Android)
-///   2. Fallback: URL web de Google Maps → abre en el navegador
-///
-/// Uso:
-///   ```dart
-///   await MapsLauncher.complejoDetalle(lat: c.lat, lng: c.lng, nombre: c.nombre);
-///   ```
+/// Utilidad para abrir Google Maps (o el navegador como fallback)
+/// apuntando a una ubicación con nombre.
 class MapsLauncher {
   MapsLauncher._();
 
-  /// Navegar a destino (apertura de Google Maps / app de navegación nativa).
+  /// Abre Google Maps en la ubicación [lat]/[lng] con etiqueta [nombre].
+  /// Intenta primero la app nativa de Google Maps; si no está instalada
+  /// usa el fallback de google.com/maps en el navegador.
   static Future<void> irA({
     required double lat,
     required double lng,
-    String? nombre,
+    required String nombre,
   }) async {
-    // geo: scheme → Google Maps nativo en Android, Apple Maps en iOS
-    final geoUri = Uri(
-      scheme: 'geo',
-      path: '$lat,$lng',
-      queryParameters: {'q': nombre != null ? '$lat,$lng($nombre)' : '$lat,$lng'},
+    final encoded = Uri.encodeComponent(nombre);
+
+    // URI nativa de Google Maps (Android & iOS)
+    final nativeUri = Uri.parse(
+      'google.navigation:q=$lat,$lng&label=$encoded',
     );
 
-    // URL web como fallback garantizado (funciona en cualquier navegador)
+    // URI web de fallback
     final webUri = Uri.parse(
-      'https://www.google.com/maps/search/?api=1&query=$lat,$lng',
+      'https://www.google.com/maps/search/?api=1'
+      '&query=$lat,$lng'
+      '&query_place_id=$encoded',
     );
 
     try {
-      if (await canLaunchUrl(geoUri)) {
-        await launchUrl(geoUri);
-        return;
+      if (await canLaunchUrl(nativeUri)) {
+        await launchUrl(nativeUri);
+      } else {
+        await launchUrl(webUri, mode: LaunchMode.externalApplication);
       }
     } catch (e) {
-      debugPrint('[MapsLauncher] geo: no disponible → $e');
-    }
-
-    // Fallback web
-    try {
-      await launchUrl(webUri, mode: LaunchMode.externalApplication);
-    } catch (e) {
-      debugPrint('[MapsLauncher] No se pudo abrir Google Maps: $e');
+      debugPrint('[MapsLauncher] Error abriendo Maps: $e');
+      // Fallback silencioso — no lanzar excepción al usuario
+      try {
+        await launchUrl(webUri, mode: LaunchMode.externalApplication);
+      } catch (_) {}
     }
   }
 }
