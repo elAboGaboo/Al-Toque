@@ -10,7 +10,14 @@ final complejosRepositoryProvider = Provider<ComplejosRepository>(
   (_) => ComplejosRepository(),
 );
 
-/// Stream de todos los complejos activos.
+/// One-shot fetch de complejos activos con timeout de 8 s.
+/// Úsalo en InicioScreen para evitar loading infinito si Firestore no responde.
+final complejosFutureProvider = FutureProvider<List<ComplejoModel>>((ref) {
+  return ref.watch(complejosRepositoryProvider).getComplejos();
+});
+
+/// Stream de todos los complejos activos (tiempo real).
+/// Úsalo en MapaScreen u otras vistas que necesiten actualizaciones live.
 final complejosProvider = StreamProvider<List<ComplejoModel>>((ref) {
   return ref.watch(complejosRepositoryProvider).streamComplejos();
 });

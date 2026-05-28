@@ -9,6 +9,28 @@ import '../models/complejo_model.dart';
 class ComplejosRepository {
   final _db = FirebaseFirestore.instance;
 
+  /// Obtiene complejos activos (one-shot, con timeout de 8 s).
+  ///
+  /// Reemplaza al StreamProvider en pantallas donde no se necesitan
+  /// actualizaciones en tiempo real (p.ej. InicioScreen). Evita que el
+  /// Scaffold quede en loading infinito si Firestore no responde.
+  Future<List<ComplejoModel>> getComplejos() async {
+    try {
+      final snap = await _db
+          .collection(FirestorePaths.complejos)
+          .where('activo', isEqualTo: true)
+          .get()
+          .timeout(const Duration(seconds: 8));
+      final lista = snap.docs.map(ComplejoModel.fromFirestore).toList();
+      lista.sort((a, b) => a.nombre.compareTo(b.nombre));
+      return lista;
+    } on FirebaseException catch (e) {
+      throw Exception('[${e.code}] ${e.message ?? "Error de Firestore"}');
+    } catch (e) {
+      throw Exception('Error cargando complejos: $e');
+    }
+  }
+
   /// Stream de todos los complejos activos desde Firestore.
   /// Solo filtra por 'activo' (índice de campo único — sin índice compuesto).
   /// Ordena por rating en el cliente para evitar un orderBy compuesto.
@@ -74,16 +96,16 @@ class ComplejosRepository {
 
   /// Obtiene canchas activas (one-shot).
   ///
-  /// Usa .snapshots().first en lugar de .get() porque Dart's .timeout()
-  /// funciona correctamente sobre Streams pero NO sobre Futures del SDK
-  /// nativo de Firebase (éstos ignoran la cancelación en algunos dispositivos).
+  /// Usa .get() en lugar de .snapshots().first porque .first no cancela
+  /// la suscripción al stream cuando el timeout dispara: cada reintento
+  /// acumula listeners abiertos → ANR en Android → crash.
+  /// Con .get() no hay suscripción de stream que cancelar.
   Future<List<CanchaModel>> getCanchas(String complejoId) async {
     debugPrint('[Repo] getCanchas($complejoId)');
     try {
       final snap = await _db
           .collection(FirestorePaths.canchas(complejoId))
-          .snapshots()
-          .first
+          .get()
           .timeout(const Duration(seconds: 8));
       debugPrint('[Repo] getCanchas → ${snap.docs.length} docs');
       return snap.docs
@@ -110,12 +132,26 @@ class ComplejosRepository {
   }
 
   /// Obtiene una cancha por ID (one-shot).
+  ///
+  /// Usa .get() para evitar el stream-leak que ocurre con .snapshots().first
+  /// cuando el timeout dispara sin cancelar la suscripción subyacente.
   Future<CanchaModel?> getCancha(String complejoId, String canchaId) async {
-    final doc = await _db
-        .doc(FirestorePaths.canchaDoc(complejoId, canchaId))
-        .get();
-    if (!doc.exists) return null;
-    return CanchaModel.fromFirestore(doc, complejoId: complejoId);
+    try {
+      final doc = await _db
+          .doc(FirestorePaths.canchaDoc(complejoId, canchaId))
+          .get()
+          .timeout(
+            const Duration(seconds: 8),
+            onTimeout: () =>
+                throw Exception('timeout: Firestore no respondió en 8 s.'),
+          );
+      if (!doc.exists) return null;
+      return CanchaModel.fromFirestore(doc, complejoId: complejoId);
+    } on FirebaseException catch (e) {
+      throw Exception('[${e.code}] ${e.message ?? "Error de Firestore"}');
+    } catch (e) {
+      throw Exception('Error cargando cancha: $e');
+    }
   }
 
   /// Crea un complejo nuevo con ID auto-generado por Firestore. Devuelve el ID.

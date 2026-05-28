@@ -455,24 +455,69 @@ class _PulseDotState extends State<_PulseDot> with SingleTickerProviderStateMixi
 class _ComplejosSection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final complejosAsync = ref.watch(complejosProvider);
+    // FutureProvider con timeout de 8 s — nunca queda en loading infinito.
+    final complejosAsync = ref.watch(complejosFutureProvider);
 
     return complejosAsync.when(
       loading: () => const Padding(
         padding: EdgeInsets.symmetric(vertical: 40),
         child: Center(
-          child: CircularProgressIndicator(color: AppColors.acc),
+          child: CircularProgressIndicator(color: AppColors.acc, strokeWidth: 2.5),
         ),
       ),
       error: (err, _) {
         debugPrint('[InicioScreen] Error cargando complejos: $err');
+        final isTimeout = err.toString().contains('timeout') ||
+            err.toString().contains('agotado') ||
+            err.toString().contains('TimeoutException');
         return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 32),
-          child: Center(
-            child: Text(
-              'No se pudieron cargar los complejos.\nVerifica tu conexión.',
-              style: GoogleFonts.outfit(fontSize: 13, color: AppColors.tx3),
-              textAlign: TextAlign.center,
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+          child: Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: AppColors.sur,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: AppColors.bdr2),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.wifi_off_rounded,
+                    color: AppColors.red, size: 32),
+                const SizedBox(height: 10),
+                Text(
+                  isTimeout
+                      ? 'Sin respuesta del servidor'
+                      : 'No se pudieron cargar los complejos',
+                  style: GoogleFonts.bricolageGrotesque(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.tx,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Verifica tu conexión e intenta de nuevo.',
+                  style: GoogleFonts.outfit(
+                      fontSize: 12, color: AppColors.tx3, height: 1.4),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 14),
+                FilledButton.icon(
+                  onPressed: () => ref.invalidate(complejosFutureProvider),
+                  icon: const Icon(Icons.refresh_rounded, size: 15),
+                  label: Text('Reintentar',
+                      style: GoogleFonts.outfit(fontWeight: FontWeight.w700)),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.acc,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 20, vertical: 10),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+              ],
             ),
           ),
         );

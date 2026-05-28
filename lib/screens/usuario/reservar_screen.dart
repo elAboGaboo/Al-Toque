@@ -251,29 +251,61 @@ class _ReservarScreenState extends ConsumerState<ReservarScreen> {
   Future<void> _confirmarReserva(CanchaModel cancha) async {
     if (_horaSeleccionada == null) return;
 
-    final horaFin = _calcularHoraFin(_horaSeleccionada!);
-    final reservaId =
-        await ref.read(reservaNotifierProvider.notifier).crearReserva(
-              complejoId: widget.complejoId,
-              canchaId: widget.canchaId,
-              fecha: _fechaSeleccionada,
-              horaInicio: _horaSeleccionada!,
-              horaFin: horaFin,
-              duracionHoras: 1.0,
-              precioTotal: cancha.precioBase,
-              metodoPago: _metodoPago,
-            );
+    try {
+      final horaFin = _calcularHoraFin(_horaSeleccionada!);
+      final reservaId =
+          await ref.read(reservaNotifierProvider.notifier).crearReserva(
+                complejoId: widget.complejoId,
+                canchaId: widget.canchaId,
+                fecha: _fechaSeleccionada,
+                horaInicio: _horaSeleccionada!,
+                horaFin: horaFin,
+                duracionHoras: 1.0,
+                precioTotal: cancha.precioBase,
+                metodoPago: _metodoPago,
+              );
 
-    if (reservaId != null && mounted) {
-      context.pushReplacement('/confirmacion/$reservaId');
-    } else if (mounted) {
+      if (!mounted) return;
+
+      if (reservaId != null) {
+        context.pushReplacement('/confirmacion/$reservaId');
+      } else {
+        // AsyncValue.guard capturó la excepción → leer mensaje del notifier.
+        final estado = ref.read(reservaNotifierProvider);
+        final rawMsg = estado.error?.toString() ?? '';
+        final mensaje = _mensajeAmigable(rawMsg);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(mensaje),
+            backgroundColor: AppColors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      // Capa de seguridad: si algo escapa del guard (no debería).
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Error al crear la reserva. Intenta nuevamente.'),
+        SnackBar(
+          content: Text(_mensajeAmigable(e.toString())),
           backgroundColor: AppColors.red,
         ),
       );
     }
+  }
+
+  /// Convierte un mensaje de excepción técnico en texto para el usuario.
+  String _mensajeAmigable(String raw) {
+    if (raw.contains('agotado') || raw.contains('timeout')) {
+      return 'Tiempo de espera agotado. Verifica tu conexión e intenta de nuevo.';
+    }
+    if (raw.contains('PERMISSION_DENIED') || raw.contains('permission')) {
+      return 'Sin permiso para crear la reserva. Intenta cerrar sesión e ingresar de nuevo.';
+    }
+    if (raw.contains('UNAVAILABLE') || raw.contains('unavailable')) {
+      return 'Servicio no disponible. Verifica tu conexión a internet.';
+    }
+    if (raw.isEmpty) return 'Error al crear la reserva. Intenta nuevamente.';
+    return 'Error al crear la reserva. Intenta nuevamente.';
   }
 
   String _calcularHoraFin(String horaInicio) {

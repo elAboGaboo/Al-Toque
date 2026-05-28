@@ -80,15 +80,32 @@ class ReservasRepository {
   }
 
   /// Crea una reserva nueva. Retorna el ID de la reserva.
+  ///
+  /// Usa un timeout de 15 s porque la persistencia offline está deshabilitada
+  /// (ver main.dart) y sin ella las escrituras esperan confirmación del servidor.
+  /// Pasado el límite se lanza Exception para que AsyncValue.guard lo capture.
   Future<String> crearReserva(ReservaModel reserva) async {
-    final ref = _db.collection(FirestorePaths.reservas).doc(reserva.id.isEmpty
-        ? null
-        : reserva.id);
-    await ref.set({
-      ...reserva.toMap(),
-      'creadoEn': FieldValue.serverTimestamp(),
-    });
-    return ref.id;
+    // doc() sin argumento genera ID auto en el cliente.
+    final docRef = reserva.id.isEmpty
+        ? _db.collection(FirestorePaths.reservas).doc()
+        : _db.collection(FirestorePaths.reservas).doc(reserva.id);
+
+    try {
+      await docRef
+          .set({
+            ...reserva.toMap(),
+            'creadoEn': FieldValue.serverTimestamp(),
+          })
+          .timeout(
+            const Duration(seconds: 15),
+            onTimeout: () => throw Exception(
+              'Tiempo de espera agotado. Verifica tu conexión e inténtalo de nuevo.',
+            ),
+          );
+    } on FirebaseException catch (e) {
+      throw Exception('[${e.code}] ${e.message ?? "Error de Firestore"}');
+    }
+    return docRef.id;
   }
 
   /// Obtiene una reserva por ID.
