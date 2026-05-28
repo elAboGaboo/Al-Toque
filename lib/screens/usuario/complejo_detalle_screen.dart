@@ -198,9 +198,16 @@ class _ComplejoDetalleScreenState
                   padding: const EdgeInsets.only(bottom: 12),
                   child: _CanchaCard(
                     cancha: canchas[i],
-                    onReservar: () => context.push(
-                      '/reservar/${canchas[i].complejoId}/${canchas[i].id}',
-                    ),
+                    onReservar: () {
+                      // Guardar cancha en provider antes de navegar →
+                      // ReservarScreen la lee en initState sin tocar Firestore.
+                      ref
+                          .read(canchaSeleccionadaProvider.notifier)
+                          .select(canchas[i]);
+                      context.push(
+                        '/reservar/${canchas[i].complejoId}/${canchas[i].id}',
+                      );
+                    },
                   ),
                 ),
                 childCount: canchas.length,

@@ -10,7 +10,21 @@ final reservasRepositoryProvider = Provider<ReservasRepository>(
   (_) => ReservasRepository(),
 );
 
+/// One-shot de disponibilidad con timeout (para ReservarScreen).
+/// Evita el spinner eterno del StreamProvider cuando Firestore tarda.
+/// El usuario puede refrescar al cambiar de fecha (el provider se invalida
+/// automáticamente porque la clave cambia con cada fecha seleccionada).
+final disponibilidadFutureProvider = FutureProvider.family<List<ReservaModel>,
+    ({String complejoId, String canchaId, DateTime fecha})>((ref, params) {
+  return ref.watch(reservasRepositoryProvider).getReservasDelDia(
+        complejoId: params.complejoId,
+        canchaId: params.canchaId,
+        fecha: params.fecha,
+      );
+});
+
 /// Stream de disponibilidad de una cancha en una fecha (tiempo real).
+/// Úsalo solo donde sea crítica la actualización en vivo.
 final disponibilidadProvider = StreamProvider.family<List<ReservaModel>,
     ({String complejoId, String canchaId, DateTime fecha})>((ref, params) {
   return ref.watch(reservasRepositoryProvider).streamReservasDelDia(

@@ -60,6 +60,10 @@ final complejoSeleccionadoProvider =
 class CanchaSeleccionadaNotifier extends Notifier<CanchaModel?> {
   @override
   CanchaModel? build() => null;
+
+  /// Llama esto ANTES de navegar a /reservar/:complejoId/:canchaId para que
+  /// ReservarScreen muestre la info al instante sin request extra a Firestore.
+  void select(CanchaModel? cancha) => state = cancha;
 }
 
 final canchaSeleccionadaProvider =

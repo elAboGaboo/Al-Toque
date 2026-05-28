@@ -32,17 +32,54 @@ class _ReservarScreenState extends ConsumerState<ReservarScreen> {
   String? _horaSeleccionada;
   String _metodoPago = 'yape';
 
+  // Datos capturados sincrónicamente desde providers en caché.
+  // Si el usuario viene de ComplejoDetalleScreen siempre están disponibles
+  // y no se hace ningún request extra a Firestore.
+  CanchaModel? _cancha;
+  ComplejoModel? _complejo;
+
   @override
   void initState() {
     super.initState();
-    // Siempre normalizado a fecha-pura (sin componente de tiempo)
-    // para que la clave del provider sea estable durante el día.
     final now = DateTime.now();
     _fechaSeleccionada = DateTime(now.year, now.month, now.day);
+
+    // Leer cancha y complejo del provider (seteados antes de navegar).
+    final cachedCancha = ref.read(canchaSeleccionadaProvider);
+    if (cachedCancha != null && cachedCancha.id == widget.canchaId) {
+      _cancha = cachedCancha;
+    }
+    final cachedComplejo = ref.read(complejoSeleccionadoProvider);
+    if (cachedComplejo != null && cachedComplejo.id == widget.complejoId) {
+      _complejo = cachedComplejo;
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    // Disponibilidad: siempre va a Firestore (datos en tiempo real, timeout 8s).
+    // La clave cambia con la fecha → auto-refetch al cambiar día.
+    final disponibilidadAsync = ref.watch(
+      disponibilidadFutureProvider((
+        complejoId: widget.complejoId,
+        canchaId: widget.canchaId,
+        fecha: _fechaSeleccionada,
+      )),
+    );
+    final isLoading = ref.watch(reservaNotifierProvider).isLoading;
+
+    // ── Ruta rápida: datos en caché (navegación normal) ────────────────────
+    if (_cancha != null && _complejo != null) {
+      return _buildScaffold(
+        context,
+        cancha: _cancha!,
+        complejo: _complejo!,
+        disponibilidadAsync: disponibilidadAsync,
+        isLoading: isLoading,
+      );
+    }
+
+    // ── Fallback: deep link → cargar desde Firestore ───────────────────────
     final canchaAsync = ref.watch(
       canchaFutureProvider((
         complejoId: widget.complejoId,
@@ -51,15 +88,24 @@ class _ReservarScreenState extends ConsumerState<ReservarScreen> {
     );
     final complejoAsync = ref.watch(complejoFutureProvider(widget.complejoId));
 
-    // ── Watch en el nivel de build — nunca dentro de métodos condicionales ──
-    final disponibilidadAsync = ref.watch(
-      disponibilidadProvider((
-        complejoId: widget.complejoId,
-        canchaId: widget.canchaId,
-        fecha: _fechaSeleccionada,
-      )),
-    );
-    final isLoading = ref.watch(reservaNotifierProvider).isLoading;
+    final cancha = canchaAsync.asData?.value;
+    final complejo = complejoAsync.asData?.value;
+
+    // Si ambos ya están disponibles, construir directamente.
+    if (cancha != null && complejo != null) {
+      return _buildScaffold(
+        context,
+        cancha: cancha,
+        complejo: complejo,
+        disponibilidadAsync: disponibilidadAsync,
+        isLoading: isLoading,
+      );
+    }
+
+    // Loading o error mientras llegan los datos base.
+    final isLoadingBase =
+        canchaAsync.isLoading || complejoAsync.isLoading;
+    final errorBase = canchaAsync.error ?? complejoAsync.error;
 
     return Scaffold(
       backgroundColor: AppColors.bg,
@@ -70,49 +116,55 @@ class _ReservarScreenState extends ConsumerState<ReservarScreen> {
           icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
           onPressed: () => context.pop(),
         ),
-        title: canchaAsync.when(
-          data: (c) => Text(
-            c?.nombre ?? 'Reservar cancha',
-            style: GoogleFonts.bricolageGrotesque(
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          loading: () => const SizedBox.shrink(),
-          error: (_, _) => Text(
-            'Reservar cancha',
-            style: GoogleFonts.bricolageGrotesque(
-                fontSize: 18, fontWeight: FontWeight.w700),
-          ),
+        title: Text(
+          'Reservar cancha',
+          style: GoogleFonts.bricolageGrotesque(
+              fontSize: 18, fontWeight: FontWeight.w700),
         ),
       ),
-      body: canchaAsync.when(
-        loading: () =>
-            const Center(child: CircularProgressIndicator(color: AppColors.acc)),
-        error: (e, _) => Center(child: Text('Error: $e')),
-        data: (cancha) {
-          if (cancha == null) {
-            return const Center(child: Text('Cancha no encontrada'));
-          }
-          return complejoAsync.when(
-            loading: () => const Center(
-                child: CircularProgressIndicator(color: AppColors.acc)),
-            error: (e, _) => Center(child: Text('Error: $e')),
-            data: (complejo) {
-              if (complejo == null) {
-                return const Center(child: Text('Complejo no encontrado'));
-              }
-              return _buildBody(
-                context,
-                cancha,
-                complejo,
-                disponibilidadAsync,
-                isLoading,
-              );
-            },
-          );
-        },
+      body: isLoadingBase
+          ? const Center(
+              child: CircularProgressIndicator(color: AppColors.acc))
+          : _ErrorRecuperable(
+              mensaje: errorBase != null
+                  ? _mensajeAmigable(errorBase.toString())
+                  : 'Cancha o complejo no encontrado.',
+              onRetry: () {
+                ref.invalidate(canchaFutureProvider((
+                  complejoId: widget.complejoId,
+                  canchaId: widget.canchaId,
+                )));
+                ref.invalidate(
+                    complejoFutureProvider(widget.complejoId));
+              },
+            ),
+    );
+  }
+
+  Scaffold _buildScaffold(
+    BuildContext context, {
+    required CanchaModel cancha,
+    required ComplejoModel complejo,
+    required AsyncValue<List<ReservaModel>> disponibilidadAsync,
+    required bool isLoading,
+  }) {
+    return Scaffold(
+      backgroundColor: AppColors.bg,
+      appBar: AppBar(
+        backgroundColor: AppColors.bg,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
+          onPressed: () => context.pop(),
+        ),
+        title: Text(
+          cancha.nombre,
+          style: GoogleFonts.bricolageGrotesque(
+              fontSize: 18, fontWeight: FontWeight.w700),
+        ),
       ),
+      body: _buildBody(
+          context, cancha, complejo, disponibilidadAsync, isLoading),
     );
   }
 
@@ -177,20 +229,22 @@ class _ReservarScreenState extends ConsumerState<ReservarScreen> {
 
               disponibilidadAsync.when(
                 loading: () => const Padding(
-                  padding: EdgeInsets.all(20),
+                  padding: EdgeInsets.symmetric(vertical: 32),
                   child: Center(
-                      child: CircularProgressIndicator(color: AppColors.acc)),
+                    child: CircularProgressIndicator(
+                        color: AppColors.acc, strokeWidth: 2.5),
+                  ),
                 ),
-                error: (_, _) => Padding(
+                error: (e, _) => Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: _TimeSlotsGrid(
-                    slots: slots,
-                    ocupadas: const [],
-                    fecha: _fechaSeleccionada,
-                    precio: cancha.precioBase,
-                    selectedTime: _horaSeleccionada,
-                    onTimeSelected: (t) =>
-                        setState(() => _horaSeleccionada = t),
+                  child: _SlotsErrorBanner(
+                    onRetry: () => ref.invalidate(
+                      disponibilidadFutureProvider((
+                        complejoId: widget.complejoId,
+                        canchaId: widget.canchaId,
+                        fecha: _fechaSeleccionada,
+                      )),
+                    ),
                   ),
                 ),
                 data: (reservas) => Padding(
@@ -944,6 +998,125 @@ class _MetodoPagoSheet extends StatelessWidget {
             );
           }),
         ],
+      ),
+    );
+  }
+}
+
+// ── Error banner para horarios (permite reintentar sin salir de pantalla) ─────
+
+class _SlotsErrorBanner extends StatelessWidget {
+  final VoidCallback onRetry;
+  const _SlotsErrorBanner({required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: AppColors.sur,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.bdr2),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.wifi_off_rounded, color: AppColors.red, size: 28),
+          const SizedBox(height: 10),
+          Text(
+            'No se pudieron cargar los horarios',
+            style: GoogleFonts.bricolageGrotesque(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: AppColors.tx,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Verifica tu conexión e intenta de nuevo.',
+            style: GoogleFonts.plusJakartaSans(
+                fontSize: 12, color: AppColors.tx3, height: 1.4),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 14),
+          FilledButton.icon(
+            onPressed: onRetry,
+            icon: const Icon(Icons.refresh_rounded, size: 15),
+            label: Text('Reintentar',
+                style: GoogleFonts.outfit(fontWeight: FontWeight.w700)),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.acc,
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Error recuperable: cancha/complejo no disponibles (deep link) ─────────────
+
+class _ErrorRecuperable extends StatelessWidget {
+  final String mensaje;
+  final VoidCallback onRetry;
+  const _ErrorRecuperable({required this.mensaje, required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                color: AppColors.red.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: const Icon(Icons.wifi_off_rounded,
+                  color: AppColors.red, size: 28),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'No se pudo cargar la cancha',
+              style: GoogleFonts.bricolageGrotesque(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: AppColors.tx,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              mensaje,
+              style: GoogleFonts.plusJakartaSans(
+                  fontSize: 13, color: AppColors.tx2, height: 1.5),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 20),
+            FilledButton.icon(
+              onPressed: onRetry,
+              icon: const Icon(Icons.refresh_rounded, size: 15),
+              label: Text('Reintentar',
+                  style: GoogleFonts.outfit(fontWeight: FontWeight.w700)),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.acc,
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 24, vertical: 12),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

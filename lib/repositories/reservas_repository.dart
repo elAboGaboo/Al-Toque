@@ -7,6 +7,41 @@ import '../models/reserva_model.dart';
 class ReservasRepository {
   final _db = FirebaseFirestore.instance;
 
+  /// One-shot: reservas del día para una cancha — con timeout de 8 s.
+  ///
+  /// Reemplaza al StreamProvider en ReservarScreen porque con
+  /// persistenceEnabled=false el stream puede no emitir nunca si Firestore
+  /// tarda, dejando los slots en spinner eterno.
+  Future<List<ReservaModel>> getReservasDelDia({
+    required String complejoId,
+    required String canchaId,
+    required DateTime fecha,
+  }) async {
+    final inicio = DateTime(fecha.year, fecha.month, fecha.day);
+    final fin = DateTime(fecha.year, fecha.month, fecha.day, 23, 59, 59);
+
+    try {
+      final snap = await _db
+          .collection(FirestorePaths.reservas)
+          .where('complejoId', isEqualTo: complejoId)
+          .get()
+          .timeout(const Duration(seconds: 8));
+
+      return snap.docs
+          .map(ReservaModel.fromFirestore)
+          .where((r) =>
+              r.canchaId == canchaId &&
+              !r.fecha.isBefore(inicio) &&
+              !r.fecha.isAfter(fin) &&
+              (r.estaConfirmada || r.estaPendiente))
+          .toList();
+    } on FirebaseException catch (e) {
+      throw Exception('[${e.code}] ${e.message ?? "Error de Firestore"}');
+    } catch (e) {
+      throw Exception('Error cargando disponibilidad: $e');
+    }
+  }
+
   /// Stream de reservas del día seleccionado para una cancha (tiempo real).
   /// Filtra por complejoId en Firestore, resto en cliente.
   Stream<List<ReservaModel>> streamReservasDelDia({
