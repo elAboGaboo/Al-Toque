@@ -8,25 +8,36 @@ class FlashSlotsRepository {
   final _db = FirebaseFirestore.instance;
 
   /// Stream de flash slots activos (no expirados).
+  /// Filtra por estado y expiraEn client-side para evitar índice compuesto
+  /// [estado, expiraEn]. Solo aplica .where() simple sobre 'estado'.
   Stream<List<FlashSlotModel>> streamSlotsActivos() {
-    final now = Timestamp.fromDate(DateTime.now());
+    final now = DateTime.now();
     return _db
         .collection(FirestorePaths.flashSlots)
         .where('estado', isEqualTo: 'activo')
-        .where('expiraEn', isGreaterThan: now)
-        .orderBy('expiraEn')
         .snapshots()
-        .map((s) => s.docs.map(FlashSlotModel.fromFirestore).toList());
+        .map((s) {
+      final lista = s.docs
+          .map(FlashSlotModel.fromFirestore)
+          .where((sl) => sl.expiraEn.isAfter(now))
+          .toList();
+      lista.sort((a, b) => a.expiraEn.compareTo(b.expiraEn));
+      return lista;
+    });
   }
 
   /// Stream de flash slots de un complejo (admin).
+  /// Ordena client-side para evitar índice compuesto [complejoId, creadoEn].
   Stream<List<FlashSlotModel>> streamSlotsComplejo(String complejoId) {
     return _db
         .collection(FirestorePaths.flashSlots)
         .where('complejoId', isEqualTo: complejoId)
-        .orderBy('creadoEn', descending: true)
         .snapshots()
-        .map((s) => s.docs.map(FlashSlotModel.fromFirestore).toList());
+        .map((s) {
+      final lista = s.docs.map(FlashSlotModel.fromFirestore).toList();
+      lista.sort((a, b) => b.creadoEn.compareTo(a.creadoEn));
+      return lista;
+    });
   }
 
   /// Crea un nuevo flash slot.

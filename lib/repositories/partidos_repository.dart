@@ -8,13 +8,17 @@ class PartidosRepository {
   final _db = FirebaseFirestore.instance;
 
   /// Stream de partidos abiertos (buscando jugadores).
+  /// Ordena client-side para evitar índice compuesto [estado, fecha].
   Stream<List<PartidoModel>> streamPartidosAbiertos() {
     return _db
         .collection(FirestorePaths.partidos)
         .where('estado', isEqualTo: 'abierto')
-        .orderBy('fecha')
         .snapshots()
-        .map((s) => s.docs.map(PartidoModel.fromFirestore).toList());
+        .map((s) {
+      final lista = s.docs.map(PartidoModel.fromFirestore).toList();
+      lista.sort((a, b) => a.fecha.compareTo(b.fecha));
+      return lista;
+    });
   }
 
   /// Stream de un partido específico (tiempo real).
@@ -26,27 +30,35 @@ class PartidosRepository {
   }
 
   /// Stream de partidos de un usuario (como jugador u organizador).
+  /// Filtra client-side y ordena por creadoEn para evitar índice compuesto.
   Stream<List<PartidoModel>> streamMisPartidos(String userId) {
     return _db
         .collection(FirestorePaths.partidos)
-        .orderBy('creadoEn', descending: true)
         .snapshots()
-        .map((s) => s.docs
-            .map(PartidoModel.fromFirestore)
-            .where((p) =>
-                p.organizadorId == userId ||
-                p.jugadores.any((j) => j.userId == userId))
-            .toList());
+        .map((s) {
+      final lista = s.docs
+          .map(PartidoModel.fromFirestore)
+          .where((p) =>
+              p.organizadorId == userId ||
+              p.jugadores.any((j) => j.userId == userId))
+          .toList();
+      lista.sort((a, b) => b.creadoEn.compareTo(a.creadoEn));
+      return lista;
+    });
   }
 
   /// Stream de partidos de un complejo (admin).
+  /// Ordena client-side para evitar índice compuesto [complejoId, fecha].
   Stream<List<PartidoModel>> streamPartidosComplejo(String complejoId) {
     return _db
         .collection(FirestorePaths.partidos)
         .where('complejoId', isEqualTo: complejoId)
-        .orderBy('fecha', descending: true)
         .snapshots()
-        .map((s) => s.docs.map(PartidoModel.fromFirestore).toList());
+        .map((s) {
+      final lista = s.docs.map(PartidoModel.fromFirestore).toList();
+      lista.sort((a, b) => b.fecha.compareTo(a.fecha));
+      return lista;
+    });
   }
 
   /// Crea un nuevo partido.
