@@ -28,7 +28,6 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
   final _passCtrl = TextEditingController();
   bool _obscure = true;
   bool _loadingLogin = false;
-  bool _loadingSeed = false; // ignore: prefer_final_fields
 
   /// Rol esperado para el login actual: 'jugador' | 'dueno' | null
   String? _rolLogin;
@@ -50,109 +49,6 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
       setState(() { _modo = modo; if (rol != null) _rolLogin = rol; });
 
   void _volverARoles() => setState(() { _modo = 'roles'; _rolLogin = null; });
-
-  // ── POBLAR BD ──────────────────────────────────────────
-  // El seeder requiere que un DUEÑO esté autenticado para poder
-  // escribir en Firestore. Desde esta pantalla (sin auth), solo
-  // mostramos las instrucciones de cómo hacerlo.
-  Future<void> _poblarDatos() async {
-    if (!mounted) return;
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.asur,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: AppColors.aaccD,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: const Icon(Icons.dataset_outlined,
-                  color: AppColors.aacc, size: 18),
-            ),
-            const SizedBox(width: 10),
-            Text('Poblar base de datos',
-                style: GoogleFonts.bricolageGrotesque(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 16,
-                    color: AppColors.atx)),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Para sembrar datos necesitas una cuenta de dueño.',
-              style: GoogleFonts.outfit(
-                  color: AppColors.atx2, fontSize: 13, height: 1.4),
-            ),
-            const SizedBox(height: 14),
-            _paso(ctx, '1', 'Toca "Registrar mi complejo"'),
-            _paso(ctx, '2', 'Crea tu cuenta de dueño'),
-            _paso(ctx, '3', 'Ve al Panel de Administración'),
-            _paso(ctx, '4', 'Busca "Dev Tools" y toca\n"Poblar base de datos"'),
-          ],
-        ),
-        actions: [
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: AppColors.aacc,
-              foregroundColor: Colors.black,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
-            ),
-            onPressed: () {
-              Navigator.pop(ctx);
-              context.push('/registro?rol=dueno');
-            },
-            child: Text('Registrar mi complejo',
-                style: GoogleFonts.outfit(fontWeight: FontWeight.w700)),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text('Cerrar',
-                style: GoogleFonts.outfit(color: AppColors.atx3)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _paso(BuildContext context, String num, String texto) => Padding(
-    padding: const EdgeInsets.only(bottom: 8),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          width: 22,
-          height: 22,
-          decoration: BoxDecoration(
-            color: AppColors.aaccD,
-            shape: BoxShape.circle,
-          ),
-          child: Center(
-            child: Text(num,
-                style: GoogleFonts.outfit(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.aacc)),
-          ),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(texto,
-              style: GoogleFonts.outfit(
-                  fontSize: 12,
-                  color: AppColors.atx2,
-                  height: 1.35)),
-        ),
-      ],
-    ),
-  );
 
   // ── LOGIN ──────────────────────────────────────────────
   Future<void> _login() async {
@@ -327,41 +223,7 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
             onIngresar: () => _irA('login', rol: 'dueno'),
           ),
 
-          const SizedBox(height: 24),
-
-          // ── Poblar BD (desarrollo) ───────────────────
-          Center(
-            child: _loadingSeed
-                ? const SizedBox(
-                    width: 18, height: 18,
-                    child: CircularProgressIndicator(
-                        strokeWidth: 2, color: AppColors.aacc),
-                  )
-                : TextButton.icon(
-                    onPressed: _poblarDatos,
-                    icon: const Icon(Icons.dataset_outlined,
-                        size: 15, color: AppColors.aacc),
-                    label: Text(
-                      'Poblar base de datos',
-                      style: GoogleFonts.outfit(
-                        fontSize: 12,
-                        color: AppColors.aacc,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 8),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        side: BorderSide(
-                            color: AppColors.aacc.withValues(alpha: 0.25)),
-                      ),
-                    ),
-                  ),
-          ),
-
-          const SizedBox(height: 16),
+          const SizedBox(height: 32),
         ],
       ),
     );

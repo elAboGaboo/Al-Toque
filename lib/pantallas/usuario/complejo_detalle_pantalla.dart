@@ -1,5 +1,4 @@
-// screens/usuario/complejo_detalle_screen.dart
-import 'package:flutter/foundation.dart';
+// pantallas/usuario/complejo_detalle_pantalla.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -199,7 +198,7 @@ class _ComplejoDetalleScreenState
           return [
             SliverFillRemaining(
               hasScrollBody: false,
-              child: _EmptyStateCanchas(complejoId: widget.complejoId),
+              child: const _EmptyStateCanchas(),
             ),
           ];
         }
@@ -312,12 +311,6 @@ class _ErrorView extends StatelessWidget {
                             fontSize: 13,
                             color: AppColors.tx2,
                             height: 1.5)),
-                    if (kDebugMode) ...[
-                      const SizedBox(height: 8),
-                      SelectableText(error,
-                          style: GoogleFonts.outfit(
-                              fontSize: 10, color: AppColors.tx3)),
-                    ],
                     const SizedBox(height: 20),
                     _RetryButton(onRetry: onRetry),
                   ],
@@ -422,19 +415,6 @@ class _CanchasError extends StatelessWidget {
                   textAlign: TextAlign.center,
                   style: GoogleFonts.outfit(
                       fontSize: 13, color: AppColors.tx2, height: 1.4)),
-              if (kDebugMode) ...[
-                const SizedBox(height: 10),
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: AppColors.sur2,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: SelectableText(error,
-                      style: GoogleFonts.outfit(
-                          fontSize: 10, color: AppColors.tx3)),
-                ),
-              ],
               const SizedBox(height: 16),
               _RetryButton(onRetry: onRetry),
             ],
@@ -661,8 +641,7 @@ class _CanchaCard extends StatelessWidget {
 // ── Empty state de canchas ────────────────────────────────────────────────────
 
 class _EmptyStateCanchas extends StatelessWidget {
-  final String complejoId;
-  const _EmptyStateCanchas({required this.complejoId});
+  const _EmptyStateCanchas();
 
   @override
   Widget build(BuildContext context) {
@@ -695,63 +674,6 @@ class _EmptyStateCanchas extends StatelessWidget {
               style: GoogleFonts.outfit(
                   fontSize: 13, color: AppColors.tx2, height: 1.5),
             ),
-
-            // Panel de debug — solo en modo debug
-            if (kDebugMode) ...[
-              const SizedBox(height: 24),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: AppColors.sur2,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: AppColors.bdr),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(children: [
-                      const Icon(Icons.bug_report_rounded,
-                          size: 14, color: AppColors.tx3),
-                      const SizedBox(width: 6),
-                      Text('Debug',
-                          style: GoogleFonts.outfit(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.tx3)),
-                    ]),
-                    const SizedBox(height: 6),
-                    Text('Complejo ID:',
-                        style: GoogleFonts.outfit(
-                            fontSize: 10, color: AppColors.tx3)),
-                    SelectableText(complejoId,
-                        style: GoogleFonts.outfit(
-                            fontSize: 11,
-                            color: AppColors.acc,
-                            fontWeight: FontWeight.w600)),
-                    const SizedBox(height: 10),
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: () => context.push('/dev/seed'),
-                        icon: const Icon(Icons.rocket_launch_rounded,
-                            size: 14),
-                        label: Text('Poblar base de datos',
-                            style: GoogleFonts.outfit(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600)),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: AppColors.acc,
-                          side: const BorderSide(color: AppColors.acc),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10)),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
           ],
         ),
       ),

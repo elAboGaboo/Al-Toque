@@ -6,7 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 
-import '../../nucleo/servicios/datos_sembrador.dart';
+
 import '../../nucleo/tema/app_colores.dart';
 import '../../proveedores/auth_proveedor.dart';
 import '../../proveedores/complejos_proveedor.dart';
@@ -200,9 +200,6 @@ class AdminDashboardScreen extends ConsumerWidget {
                   ],
                 ),
 
-              // ── Herramientas Dev ─────────────────────
-              const SizedBox(height: 20),
-              _DevToolsCard(),
             ],
           ),
         ),
@@ -782,135 +779,6 @@ class _DonutCard extends StatelessWidget {
   }
 }
 
-// ═════════════════════════════════════════════════════
-//  Dev Tools Card — visible para el dueño
-// ═════════════════════════════════════════════════════
-class _DevToolsCard extends StatefulWidget {
-  @override
-  State<_DevToolsCard> createState() => _DevToolsCardState();
-}
-
-class _DevToolsCardState extends State<_DevToolsCard> {
-  bool _checking = false;
-  bool? _seedOk;
-
-  @override
-  void initState() {
-    super.initState();
-    _checkSeed();
-  }
-
-  Future<void> _checkSeed() async {
-    setState(() => _checking = true);
-    final ok = await DatabaseSeeder.yaEjecutado();
-    if (mounted) setState(() { _checking = false; _seedOk = ok; });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppColors.asur,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: AppColors.aamber.withValues(alpha: 0.4),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Cabecera
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: AppColors.aamber.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(Icons.build_rounded,
-                    color: AppColors.aamber, size: 14),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                'Dev Tools',
-                style: GoogleFonts.bricolageGrotesque(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.aamber,
-                ),
-              ),
-              const Spacer(),
-              // Estado del seed
-              if (_checking)
-                const SizedBox(
-                  width: 12,
-                  height: 12,
-                  child: CircularProgressIndicator(
-                      strokeWidth: 2, color: AppColors.aamber),
-                )
-              else
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      _seedOk == true
-                          ? Icons.check_circle_rounded
-                          : Icons.warning_rounded,
-                      size: 13,
-                      color: _seedOk == true
-                          ? AppColors.aacc
-                          : AppColors.ared,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      _seedOk == true ? 'Datos OK' : 'Sin datos',
-                      style: GoogleFonts.outfit(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: _seedOk == true
-                            ? AppColors.aacc
-                            : AppColors.ared,
-                      ),
-                    ),
-                  ],
-                ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          // Botón Poblar base de datos
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton.icon(
-              onPressed: () async {
-                await context.push('/dev/seed');
-                // Al volver, refrescar el estado del seed
-                _checkSeed();
-              },
-              icon: const Icon(Icons.rocket_launch_rounded, size: 14),
-              label: Text(
-                'Poblar base de datos',
-                style: GoogleFonts.outfit(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              style: FilledButton.styleFrom(
-                backgroundColor: AppColors.aamber,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
 
 // ═════════════════════════════════════════════════════
 //  Banner — complejo no configurado
