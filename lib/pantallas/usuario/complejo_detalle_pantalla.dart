@@ -36,32 +36,23 @@ class _ComplejoDetalleScreenState
   // Para deep links (_complejo == null) se usa complejoFutureProvider.
   ComplejoModel? _complejo;
 
-  // Canchas pre-cargadas desde la pantalla de inicio (caché explícita).
-  // Si están disponibles, se muestran al instante sin request a Firestore.
-  List<CanchaModel>? _canchasCached;
-
   @override
   void initState() {
     super.initState();
-    // Leer complejo del caché del provider
+    // El complejo ya está en memoria (seteado en InicioScreen antes de navegar).
+    // No hace falta ningún request extra a Firestore.
     final cached = ref.read(complejoSeleccionadoProvider);
     if (cached != null && cached.id == widget.complejoId) {
       _complejo = cached;
-    }
-    // Leer canchas del pre-load (guardadas en InicioScreen antes de navegar)
-    final preload = ref.read(canchasPreloadProvider);
-    if (preload != null && preload.complejoId == widget.complejoId) {
-      _canchasCached = preload.canchas;
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    // Si tenemos canchas en caché explícita, usarlas directamente (0 requests).
-    // Si no, usar el FutureProvider (con timeout de 8 s).
-    final AsyncValue<List<CanchaModel>> canchasAsync = _canchasCached != null
-        ? AsyncValue.data(_canchasCached!)
-        : ref.watch(canchasFutureProvider(widget.complejoId));
+    // Canchas: FutureProvider con timeout de 8 s.
+    // Riverpod cachea el resultado, así que si ya se cargaron en la tarjeta
+    // del inicio, la respuesta es inmediata.
+    final canchasAsync = ref.watch(canchasFutureProvider(widget.complejoId));
 
     // ── Complejo disponible (navegación normal) ───────────────────────────
     if (_complejo != null) {

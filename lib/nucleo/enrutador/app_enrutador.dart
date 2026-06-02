@@ -36,18 +36,38 @@ final _shellNavigatorKey = GlobalKey<NavigatorState>();
 final _userShellNavigatorKey = GlobalKey<NavigatorState>();
 
 final appRouterProvider = Provider<GoRouter>((ref) {
-  // Escuchamos authState Y perfilUsuario.
-  // Ahora es seguro escuchar ambos porque las rutas de detalle
-  // (/complejo, /reservar...) están en el root navigator — no en el
-  // ShellRoute — así que un refresh del perfil ya no destruye la pila
-  // de navegación ni causa el redirect /complejo/:id → /inicio.
+  // Listener inteligente: solo refresca el router cuando algo relevante cambia.
+  //
+  // ❌ NO escuchar perfilUsuarioProvider directamente — cada emision de
+  //    Firestore (heartbeats, reconexiones) llamaria GoRouter.setState()
+  //    que reconstruye TODO el arbol de widgets. En dispositivos lentos
+  //    con 5 tarjetas en pantalla → jank → ANR al presionar "Ver canchas".
+  //
+  // ✅ Solo refrescar cuando:
+  //   1. Auth state cambia (login / logout).
+  //   2. El perfil llega por primera vez (null → dato).
+  //   3. El rol o el complejoId cambia (setup complejo, cambio de rol).
   final routerNotifier = ValueNotifier<int>(0);
 
-  ref.listen(authStateProvider, (_, _) {
-    routerNotifier.value++;
-  });
-  ref.listen(perfilUsuarioProvider, (_, _) {
-    routerNotifier.value++;
+  void refresh() => routerNotifier.value++;
+
+  ref.listen(authStateProvider, (_, _) => refresh());
+
+  ref.listen(perfilUsuarioProvider, (prev, next) {
+    final prevPerfil = prev?.asData?.value;
+    final nextPerfil = next.asData?.value;
+
+    final cambiorelevante =
+        // Perfil llego por primera vez
+        (prevPerfil == null && nextPerfil != null) ||
+        // Perfil desaparecio (cuenta borrada, logout extremo)
+        (prevPerfil != null && nextPerfil == null) ||
+        // Rol cambio
+        (prevPerfil?.rol != nextPerfil?.rol) ||
+        // ComplejoId cambio (dueno termino el setup)
+        (prevPerfil?.complejoId != nextPerfil?.complejoId);
+
+    if (cambiorelevante) refresh();
   });
 
   return GoRouter(

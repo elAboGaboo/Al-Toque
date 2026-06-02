@@ -56,28 +56,6 @@ final complejoSeleccionadoProvider =
   ComplejoSeleccionadoNotifier.new,
 );
 
-/// Caché explícita de canchas para la pantalla de detalle.
-///
-/// Se llena en InicioScreen justo antes de navegar a /complejo/:id, de manera
-/// que ComplejoDetalleScreen muestre las canchas instantáneamente sin ninguna
-/// llamada extra a Firestore (incluso si Riverpod descarta la caché interna
-/// del FutureProvider al cambiar de ruta).
-///
-/// Estructura: record (complejoId, canchas) — solo almacena el último complejo visto.
-class CanchasPreloadNotifier extends Notifier<({String complejoId, List<CanchaModel> canchas})?> {
-  @override
-  ({String complejoId, List<CanchaModel> canchas})? build() => null;
-
-  void guardar(String complejoId, List<CanchaModel> canchas) =>
-      state = (complejoId: complejoId, canchas: canchas);
-
-  void limpiar() => state = null;
-}
-
-final canchasPreloadProvider = NotifierProvider<CanchasPreloadNotifier,
-    ({String complejoId, List<CanchaModel> canchas})?>(
-  CanchasPreloadNotifier.new,
-);
 
 /// Cancha seleccionada (para flujo de reserva).
 class CanchaSeleccionadaNotifier extends Notifier<CanchaModel?> {

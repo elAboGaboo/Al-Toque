@@ -575,22 +575,11 @@ class _ComplejosSection extends ConsumerWidget {
                 if (i > 0) const SizedBox(height: 12),
                 _ComplexCard(
                   complejo: complejos[i],
-                  // Seteamos el modelo en el provider ANTES de navegar
-                  // → la pantalla de detalle muestra el header sin llamada Firestore extra
                   onVerCanchas: () {
+                    // Guardar complejo en provider → detalle lo muestra
+                    // instantáneamente sin request extra a Firestore.
                     ref.read(complejoSeleccionadoProvider.notifier)
                         .select(complejos[i]);
-                    // Guardar canchas en caché explícita ANTES de navegar.
-                    // Si ya están cargadas (happy path), la pantalla de detalle
-                    // las muestra al instante sin ningún request a Firestore.
-                    final canchasState =
-                        ref.read(canchasFutureProvider(complejos[i].id));
-                    if (canchasState.hasValue && canchasState.value != null) {
-                      ref.read(canchasPreloadProvider.notifier).guardar(
-                            complejos[i].id,
-                            canchasState.value!,
-                          );
-                    }
                     context.push('/complejo/${complejos[i].id}');
                   },
                 ),

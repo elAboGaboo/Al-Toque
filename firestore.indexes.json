@@ -19,7 +19,16 @@
       ]
     },
     {
-      "_comment": "reservas: validación de disponibilidad de un slot (cancha + rango fecha + estado)",
+      "_comment": "reservas: disponibilidad de cancha (complejoId + canchaId)",
+      "collectionGroup": "reservas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "complejoId", "order": "ASCENDING" },
+        { "fieldPath": "canchaId", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "_comment": "reservas: disponibilidad detallada (cancha + estado + fecha)",
       "collectionGroup": "reservas",
       "queryScope": "COLLECTION",
       "fields": [
