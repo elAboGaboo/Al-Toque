@@ -63,7 +63,7 @@ final complejoSeleccionadoProvider =
 /// llamada extra a Firestore (incluso si Riverpod descarta la caché interna
 /// del FutureProvider al cambiar de ruta).
 ///
-/// Estructura: (complejoId, List<CanchaModel>) — solo almacena el último complejo visto.
+/// Estructura: record (complejoId, canchas) — solo almacena el último complejo visto.
 class CanchasPreloadNotifier extends Notifier<({String complejoId, List<CanchaModel> canchas})?> {
   @override
   ({String complejoId, List<CanchaModel> canchas})? build() => null;

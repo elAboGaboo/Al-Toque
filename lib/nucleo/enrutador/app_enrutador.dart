@@ -207,7 +207,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       // ── Usuario · ShellRoute (solo los 4 tabs con bottom nav) ────
       ShellRoute(
         navigatorKey: _userShellNavigatorKey,
-        builder: (_, __, child) => UserShell(child: child),
+        builder: (_, _, child) => UserShell(child: child),
         routes: [
           GoRoute(
             path: '/inicio',
@@ -255,7 +255,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       // ── Admin · ShellRoute ───────────────────────────────────────
       ShellRoute(
         navigatorKey: _shellNavigatorKey,
-        builder: (_, __, child) => AdminShell(child: child),
+        builder: (_, _, child) => AdminShell(child: child),
         routes: [
           GoRoute(
             path: '/admin',

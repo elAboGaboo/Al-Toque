@@ -46,7 +46,7 @@ class PagosRepository {
     await _db.doc(FirestorePaths.pagoDoc(pagoId)).update({
       'estado': estado,
       if (estado == 'pagado') 'pagadoEn': FieldValue.serverTimestamp(),
-      if (idTransaccion != null) 'idTransaccion': idTransaccion,
+      'idTransaccion': idTransaccion,
     });
   }
 }
