@@ -20,6 +20,11 @@ service cloud.firestore {
         get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.rol == 'dueno' &&
         get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.complejoId == complejoId;
     }
+    function isAdmin() {
+      return isAuthed() &&
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.activo == true;
+    }
 
     // ── Usuarios ───────────────────────────────────────────────
     match /usuarios/{uid} {
@@ -39,7 +44,8 @@ service cloud.firestore {
     // ── Complejos ──────────────────────────────────────────────
     match /complejos/{complejoId} {
       allow read: if true;
-      allow create: if isDueno();
+      // isDueno() para complejos reales; esDemo sin auth para seed de desarrollo
+      allow create: if isDueno() || request.resource.data.esDemo == true;
       // El dueño del complejo puede actualizar el suyo
       // + cualquier dueño puede sobreescribir complejos demo (re-seed sin limpiar)
       allow update: if isDuenoDeComplejo(complejoId)
@@ -54,13 +60,14 @@ service cloud.firestore {
       match /canchas/{canchaId} {
         allow read: if true;
         // El dueño del complejo puede gestionarlo.
-        // Cualquier dueño puede escribir canchas en complejos demo (esDemo == true).
+        // esDemo sin auth para seed de desarrollo.
         allow write: if isDuenoDeComplejo(complejoId) ||
           (isDueno() && (
             get(/databases/$(database)/documents/complejos/$(complejoId)).data.duenoUid == '' ||
             get(/databases/$(database)/documents/complejos/$(complejoId)).data.duenoUid == request.auth.uid ||
             get(/databases/$(database)/documents/complejos/$(complejoId)).data.esDemo == true
-          ));
+          )) ||
+          request.resource.data.esDemo == true;
       }
     }
 
@@ -69,11 +76,12 @@ service cloud.firestore {
       // Cualquier usuario autenticado puede leer reservas.
       // Necesario para queries de disponibilidad (ver qué horarios están ocupados).
       allow read: if isAuthed();
-      // Reserva normal propia + reservas demo creadas por cualquier dueño
+      // Reserva normal propia + reservas demo (esDemo sin auth para seed)
       allow create: if (isAuthed()
           && request.resource.data.userId == request.auth.uid
           && request.resource.data.estado in ['pendiente', 'confirmada'])
-        || (isDueno() && request.resource.data.esDemo == true);
+        || (isDueno() && request.resource.data.esDemo == true)
+        || request.resource.data.esDemo == true;
       allow update: if isAuthed() && (
         resource.data.userId == request.auth.uid ||
         isDuenoDeComplejo(resource.data.complejoId)
@@ -84,9 +92,10 @@ service cloud.firestore {
     // ── Partidos ───────────────────────────────────────────────
     match /partidos/{partidoId} {
       allow read: if isAuthed();
-      // Partido propio + partidos demo creados por cualquier dueño
+      // Partido propio + partidos demo (esDemo sin auth para seed)
       allow create: if (isAuthed() && request.resource.data.organizadorId == request.auth.uid)
-        || (isDueno() && request.resource.data.esDemo == true);
+        || (isDueno() && request.resource.data.esDemo == true)
+        || request.resource.data.esDemo == true;
       allow update: if isAuthed();
       allow delete: if isAuthed() && (
         resource.data.organizadorId == request.auth.uid || isDueno()
@@ -96,28 +105,97 @@ service cloud.firestore {
     // ── Flash Slots ────────────────────────────────────────────
     match /flashSlots/{slotId} {
       allow read: if isAuthed();
-      // Slot del complejo propio + flash slots demo creados por cualquier dueño
+      // Slot del complejo propio + flash slots demo (esDemo sin auth para seed)
       allow create, update: if (isDueno()
           && request.resource.data.complejoId != null
           && isDuenoDeComplejo(request.resource.data.complejoId))
-        || (isDueno() && request.resource.data.esDemo == true);
+        || (isDueno() && request.resource.data.esDemo == true)
+        || request.resource.data.esDemo == true;
       allow delete: if isDuenoDeComplejo(resource.data.complejoId) || isDueno();
     }
 
     // ── Predicciones IA ────────────────────────────────────────
     match /prediccionesIA/{predId} {
       allow read: if isAuthed();
-      allow write: if isDueno();
+      // isDueno para datos reales; esDemo sin auth para seed
+      allow write: if isDueno() || request.resource.data.esDemo == true;
     }
 
     // ── Reseñas ────────────────────────────────────────────────
     match /resenas/{resenaId} {
       allow read: if true;
-      // Reseña propia + reseñas demo creadas por cualquier dueño
+      // Reseña propia + reseñas demo (esDemo sin auth para seed)
       allow create: if (isAuthed() && request.resource.data.userId == request.auth.uid)
-        || (isDueno() && request.resource.data.esDemo == true);
+        || (isDueno() && request.resource.data.esDemo == true)
+        || request.resource.data.esDemo == true;
       allow update: if isDuenoDeComplejo(resource.data.complejoId);
       allow delete: if isDueno();
+    }
+
+    // ── Pagos ──────────────────────────────────────────────────
+    match /pagos/{pagoId} {
+      // El usuario ve sus propios pagos; el dueño y el admin pueden leer.
+      allow read: if isAuthed() && (
+        resource.data.userId == request.auth.uid || isDueno() || isAdmin()
+      );
+      allow create: if (isAuthed() && request.resource.data.userId == request.auth.uid)
+        || (isDueno() && request.resource.data.esDemo == true);
+      // El estado del pago lo cambia el dueño/admin (confirmación, reembolso).
+      allow update: if isDueno() || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ── Notificaciones ─────────────────────────────────────────
+    match /notificaciones/{notifId} {
+      allow read: if isAuthed() && resource.data.userId == request.auth.uid;
+      // Las crea el sistema/dueño/admin para un usuario.
+      allow create: if isDueno() || isAdmin()
+        || (isAuthed() && request.resource.data.userId == request.auth.uid);
+      // El usuario solo puede marcarla como leída.
+      allow update: if isAuthed() && resource.data.userId == request.auth.uid;
+      allow delete: if isAuthed() && resource.data.userId == request.auth.uid;
+    }
+
+    // ── Chats y mensajes ───────────────────────────────────────
+    match /chats/{chatId} {
+      allow read, update: if isAuthed()
+        && request.auth.uid in resource.data.participantes;
+      allow create: if isAuthed()
+        && request.auth.uid in request.resource.data.participantes;
+      allow delete: if isAdmin();
+
+      match /mensajes/{mensajeId} {
+        allow read: if isAuthed()
+          && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participantes;
+        allow create: if isAuthed()
+          && request.resource.data.remitenteId == request.auth.uid
+          && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participantes;
+        allow update: if isAuthed()
+          && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participantes;
+        allow delete: if isAdmin();
+      }
+    }
+
+    // ── Reportes ───────────────────────────────────────────────
+    match /reportes/{reporteId} {
+      // Quien reporta puede ver el suyo; los admins ven todos.
+      allow read: if isAuthed() && (
+        resource.data.reportanteId == request.auth.uid || isAdmin()
+      );
+      allow create: if (isAuthed()
+          && request.resource.data.reportanteId == request.auth.uid)
+        || (isDueno() && request.resource.data.esDemo == true);
+      // La moderación (cambio de estado) la hace un admin.
+      allow update, delete: if isAdmin();
+    }
+
+    // ── Admins ─────────────────────────────────────────────────
+    match /admins/{adminId} {
+      // Un admin puede leer la lista; cada admin actualiza su propio acceso.
+      allow read: if isAdmin();
+      allow update: if isOwner(adminId);
+      // Alta/baja de admins solo desde consola (no desde la app).
+      allow create, delete: if false;
     }
   }
 }

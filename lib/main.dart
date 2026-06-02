@@ -7,10 +7,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'core/router/app_router.dart';
-import 'core/services/deep_link_service.dart';
-import 'core/services/notification_service.dart';
-import 'core/theme/app_theme.dart';
+import 'nucleo/enrutador/app_enrutador.dart';
+import 'nucleo/servicios/enlace_profundo_servicio.dart';
+import 'nucleo/servicios/notificacion_servicio.dart';
+import 'nucleo/tema/app_tema.dart';
 import 'firebase_options.dart';
 
 /// Handler background de FCM — debe ser top-level.

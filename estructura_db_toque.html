@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Estructura Base de Datos · TOQUE</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --panel2:#1c2430; --border:#2a3441;
+    --text:#e6edf3; --muted:#8b97a7; --accent:#3fb950; --accent2:#58a6ff;
+    --yellow:#e3b341; --pink:#f778ba; --purple:#bc8cff; --orange:#ff9a52;
+    --key:#7ee787;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:'Segoe UI',system-ui,-apple-system,sans-serif;
+    background:radial-gradient(1200px 600px at 20% -10%,#15202b,transparent),var(--bg);
+    color:var(--text);padding:28px 22px 60px}
+  header{max-width:1280px;margin:0 auto 22px}
+  h1{font-size:26px;margin:0 0 4px;letter-spacing:.3px}
+  h1 .toque{color:var(--accent);font-weight:800}
+  .sub{color:var(--muted);font-size:14px;margin:0}
+  .toolbar{max-width:1280px;margin:14px auto 24px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .toolbar input{flex:1;min-width:220px;background:var(--panel);border:1px solid var(--border);
+    color:var(--text);padding:9px 13px;border-radius:9px;font-size:14px;outline:none}
+  .toolbar input:focus{border-color:var(--accent2)}
+  .btn{background:var(--panel2);border:1px solid var(--border);color:var(--text);
+    padding:9px 14px;border-radius:9px;font-size:13px;cursor:pointer}
+  .btn:hover{border-color:var(--accent2)}
+  .legend{max-width:1280px;margin:0 auto 20px;display:flex;gap:16px;flex-wrap:wrap;font-size:12.5px;color:var(--muted)}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .dot{width:11px;height:11px;border-radius:3px;display:inline-block}
+  .grid{max-width:1280px;margin:0 auto;display:grid;
+    grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:16px;align-items:start}
+  .card{background:linear-gradient(180deg,var(--panel),#12171f);
+    border:1px solid var(--border);border-radius:14px;overflow:hidden;
+    box-shadow:0 6px 22px rgba(0,0,0,.35)}
+  .card.hidden{display:none}
+  .chead{display:flex;align-items:center;gap:10px;padding:13px 16px;cursor:pointer;
+    background:var(--panel2);border-bottom:1px solid var(--border)}
+  .chead .num{background:var(--accent);color:#06210f;font-weight:800;font-size:12px;
+    width:24px;height:24px;border-radius:7px;display:grid;place-items:center;flex:none}
+  .chead .name{font-weight:700;font-size:15px;font-family:'Cascadia Code',Consolas,monospace}
+  .chead .name .slash{color:var(--muted);font-weight:400}
+  .chead .count{margin-left:auto;color:var(--muted);font-size:12px}
+  .chead .chev{transition:transform .2s;color:var(--muted);font-size:12px}
+  .card.collapsed .chev{transform:rotate(-90deg)}
+  .card.collapsed .cbody{display:none}
+  .cdesc{padding:9px 16px;color:var(--muted);font-size:12.5px;border-bottom:1px dashed var(--border)}
+  .cbody{padding:8px 6px 12px}
+  .field{display:grid;grid-template-columns:1fr auto;gap:8px;padding:5px 12px;
+    font-family:'Cascadia Code',Consolas,monospace;font-size:12.8px;border-radius:7px}
+  .field:hover{background:rgba(88,166,255,.07)}
+  .field .fname{color:var(--text)}
+  .field .ftype{color:var(--muted);font-size:11.5px;white-space:nowrap}
+  .field.key .fname{color:var(--key);font-weight:700}
+  .field.ref .fname{color:var(--accent2)}
+  .field.sub{margin-left:10px;border-left:2px solid var(--border);padding-left:14px}
+  .field.nested{margin-left:18px;color:var(--muted)}
+  .field.nested .fname{color:#c9d4e0}
+  .enum{padding:2px 12px 7px 26px;display:flex;gap:6px;flex-wrap:wrap}
+  .pill{background:#23303f;border:1px solid var(--border);color:#aab8c9;
+    font-size:10.5px;padding:2px 8px;border-radius:20px;font-family:monospace}
+  .subcoll{margin:8px 12px 2px;border:1px solid var(--border);border-radius:10px;
+    background:rgba(124,233,135,.04)}
+  .subcoll .sc-head{padding:7px 12px;font-size:11.5px;color:var(--accent);
+    font-family:monospace;border-bottom:1px dashed var(--border);font-weight:700}
+  footer{max-width:1280px;margin:34px auto 0;color:var(--muted);font-size:12px;text-align:center}
+  code.path{background:#23303f;padding:1px 6px;border-radius:5px;font-size:11px;color:var(--key)}
+</style>
+</head>
+<body>
+<header>
+  <h1>Estructura de Base de Datos · <span class="toque">TOQUE</span></h1>
+  <p class="sub">Firestore · 13 colecciones + subcolecciones · reserva de canchas deportivas</p>
+</header>
+
+<div class="toolbar">
+  <input id="search" type="text" placeholder="Buscar colección o campo… (ej: reserva, idDueño, pago)">
+  <button class="btn" onclick="toggleAll(false)">Expandir todo</button>
+  <button class="btn" onclick="toggleAll(true)">Colapsar todo</button>
+</div>
+
+<div class="legend">
+  <span><i class="dot" style="background:var(--key)"></i> Clave / ID documento</span>
+  <span><i class="dot" style="background:var(--accent2)"></i> Referencia a otra colección</span>
+  <span><i class="dot" style="background:var(--muted)"></i> Campo anidado / mapa</span>
+  <span><i class="dot" style="background:#23303f;border:1px solid var(--border)"></i> Valores posibles (enum)</span>
+</div>
+
+<div class="grid" id="grid"></div>
+
+<footer>
+  Diagrama generado a partir de tu esquema. Ruta de documento: <code class="path">coleccion/{id}</code> ·
+  las flechas conceptuales son los campos marcados como <span style="color:var(--accent2)">referencia</span>.
+</footer>
+
+<script>
+const schema = [
+ {n:"usuarios", path:"usuarios/{idUsuario}", desc:"Información principal del usuario autenticado.",
+  fields:[
+   {k:"id",name:"idUsuario",type:"doc id"},
+   {name:"correo",type:"string"},{name:"nombreCompleto",type:"string"},
+   {name:"dni",type:"string"},{name:"fotoPerfil",type:"string"},
+   {name:"telefono",type:"string"},{name:"genero",type:"string"},
+   {name:"fechaNacimiento",type:"timestamp"},
+   {name:"roles",type:"array<string>",enum:["jugador","dueño","admin"]},
+   {name:"ultimoModoUsado",type:"string",enum:["jugador","dueño"]},
+   {name:"activo",type:"boolean"},{name:"bloqueado",type:"boolean"},
+   {name:"correoVerificado",type:"boolean"},{name:"telefonoVerificado",type:"boolean"},
+   {name:"tokenFCM",type:"string"},
+   {nested:true,name:"ubicacionActual",type:"map"},
+   {nested:true,name:"  latitud",type:"number"},{nested:true,name:"  longitud",type:"number"},
+   {nested:true,name:"  ultimaActualizacion",type:"timestamp"},
+   {name:"fechaCreacion",type:"timestamp"},{name:"ultimoInicioSesion",type:"timestamp"},
+   {name:"ultimaActualizacion",type:"timestamp"}
+  ]},
+ {n:"perfiles_jugadores", path:"perfiles_jugadores/{idUsuario}", desc:"Datos deportivos y estadísticas del jugador.",
+  fields:[
+   {k:"id",name:"idUsuario",type:"doc id"},
+   {name:"deportesFavoritos",type:"array<string>"},
+   {name:"posicionFavorita",type:"string",enum:["arquero","defensa","medio","delantero"]},
+   {name:"nivelJuego",type:"string",enum:["principiante","intermedio","avanzado"]},
+   {name:"biografia",type:"string"},
+   {name:"totalPartidosJugados",type:"number"},{name:"totalReservas",type:"number"},
+   {name:"porcentajeAsistencia",type:"number"},{name:"noShows",type:"number"},
+   {name:"cancelaciones",type:"number"},{name:"calificacion",type:"number"},
+   {ref:true,name:"favoritos",type:"array<ref> complejos/canchas"},
+   {ref:true,name:"historialReservas",type:"array<ref> reservas"},
+   {nested:true,name:"configuracion",type:"map"},
+   {nested:true,name:"  notificaciones",type:"boolean"},
+   {nested:true,name:"  idioma",type:"string"},{nested:true,name:"  modoOscuro",type:"boolean"},
+   {name:"fechaCreacion",type:"timestamp"},{name:"fechaActualizacion",type:"timestamp"}
+  ]},
+ {n:"perfiles_dueños", path:"perfiles_dueños/{idUsuario}", desc:"Información empresarial del dueño.",
+  fields:[
+   {k:"id",name:"idUsuario",type:"doc id"},
+   {name:"nombreNegocio",type:"string"},{name:"descripcionNegocio",type:"string"},
+   {name:"ruc",type:"string"},{name:"negocioVerificado",type:"boolean"},
+   {name:"totalComplejos",type:"number"},{name:"totalCanchas",type:"number"},
+   {name:"ingresosTotales",type:"number"},{name:"reservasTotales",type:"number"},
+   {name:"calificacionPromedio",type:"number"},
+   {name:"banco",type:"string"},{name:"cuentaBancaria",type:"string"},{name:"cci",type:"string"},
+   {name:"aceptaYape",type:"boolean"},{name:"aceptaPlin",type:"boolean"},
+   {name:"aceptaTarjeta",type:"boolean"},{name:"aceptaEfectivo",type:"boolean"},
+   {name:"documentoIdentidadURL",type:"string"},{name:"licenciaFuncionamientoURL",type:"string"},
+   {name:"fechaCreacion",type:"timestamp"},{name:"fechaActualizacion",type:"timestamp"}
+  ]},
+ {n:"complejos_deportivos", path:"complejos_deportivos/{idComplejo}", desc:"Representa cada sede deportiva.",
+  fields:[
+   {k:"id",name:"idComplejo",type:"doc id"},
+   {ref:true,name:"idDueño",type:"ref → perfiles_dueños"},
+   {name:"nombre",type:"string"},{name:"descripcion",type:"string"},{name:"direccion",type:"string"},
+   {name:"ubicacion",type:"GeoPoint"},{name:"geohash",type:"string"},
+   {name:"imagenPortada",type:"string"},{name:"imagenes",type:"array<string>"},{name:"videoTour",type:"string"},
+   {name:"servicios",type:"array<string>",enum:["wifi","duchas","cafeteria","vestuarios","estacionamiento","tienda"]},
+   {nested:true,name:"horario",type:"map (apertura/cierre)"},
+   {nested:true,name:"redesSociales",type:"map (fb/ig/tiktok)"},
+   {nested:true,name:"contacto",type:"map (telefono/whatsapp)"},
+   {nested:true,name:"calificacion",type:"map (promedio/cantidad)"},
+   {name:"estado",type:"string",enum:["activo","inactivo","mantenimiento"]},
+   {name:"verificado",type:"boolean"},
+   {name:"totalReservas",type:"number"},{name:"totalVisitas",type:"number"},
+   {name:"fechaCreacion",type:"timestamp"},{name:"fechaActualizacion",type:"timestamp"}
+  ]},
+ {n:"canchas", path:"canchas/{idCancha}", desc:"Información de cada cancha. Incluye subcolección de disponibilidad.",
+  fields:[
+   {k:"id",name:"idCancha",type:"doc id"},
+   {ref:true,name:"idComplejo",type:"ref → complejos_deportivos"},
+   {ref:true,name:"idDueño",type:"ref → perfiles_dueños"},
+   {name:"nombre",type:"string"},
+   {name:"deporte",type:"string",enum:["fútbol","básquet","vóley","tenis","pádel"]},
+   {name:"tipo",type:"string",enum:["5vs5","7vs7","11vs11"]},
+   {name:"superficie",type:"string",enum:["sintético","cemento","madera","grass"]},
+   {name:"techada",type:"boolean"},{name:"iluminacion",type:"boolean"},
+   {name:"capacidadJugadores",type:"number"},
+   {nested:true,name:"medidas",type:"map (largo/ancho)"},
+   {name:"imagenPortada",type:"string"},{name:"imagenes",type:"array<string>"},{name:"videoTour",type:"string"},
+   {name:"precioBaseHora",type:"number"},
+   {name:"reglasPrecio",type:"array<object>",enum:["tipo","inicio","fin","multiplicador"]},
+   {name:"extrasDisponibles",type:"array<object>",enum:["nombre","precio","disponible"]},
+   {name:"estado",type:"string",enum:["activo","mantenimiento","inactivo"]},
+   {name:"calificacionPromedio",type:"number"},
+   {name:"fechaCreacion",type:"timestamp"},{name:"fechaActualizacion",type:"timestamp"}
+  ],
+  sub:[
+   {path:"canchas/{idCancha}/disponibilidad/{fecha}",
+    fields:[
+     {name:"fecha",type:'string "2026-05-29"'},
+     {name:"horarios",type:"array<object>"},
+     {nested:true,name:"  inicio / fin",type:"string"},
+     {nested:true,name:"  estado",type:"enum"},
+     {nested:true,name:"  idReserva",type:"ref (si reservado)"}
+    ],
+    estados:["disponible","reservado","mantenimiento","bloqueado"]}
+  ]},
+ {n:"reservas", path:"reservas/{idReserva}", desc:"Colección principal de reservas. Guarda snapshots para histórico.",
+  fields:[
+   {k:"id",name:"idReserva",type:"doc id"},
+   {ref:true,name:"idCancha",type:"ref → canchas"},
+   {ref:true,name:"idComplejo",type:"ref → complejos_deportivos"},
+   {ref:true,name:"idDueño",type:"ref → perfiles_dueños"},
+   {ref:true,name:"idJugador",type:"ref → usuarios"},
+   {nested:true,name:"snapshotCancha",type:"map (nombre/deporte/imagen)"},
+   {nested:true,name:"snapshotComplejo",type:"map (nombre/direccion)"},
+   {nested:true,name:"snapshotJugador",type:"map (nombreCompleto/fotoPerfil)"},
+   {name:"fechaReserva",type:"timestamp"},
+   {name:"horaInicio",type:"string"},{name:"horaFin",type:"string"},{name:"duracionHoras",type:"number"},
+   {name:"extras",type:"array<object> (nombre/precio)"},
+   {nested:true,name:"precios",type:"map (subtotal/comision/descuento/total)"},
+   {name:"metodoPago",type:"string",enum:["tarjeta","yape","plin","efectivo"]},
+   {name:"estadoPago",type:"string",enum:["pendiente","pagado","fallido","reembolsado"]},
+   {name:"estadoReserva",type:"string",enum:["pendiente","confirmada","completada","cancelada","no_show"]},
+   {name:"codigoQRIngreso",type:"string"},{name:"asistenciaConfirmada",type:"boolean"},
+   {name:"fechaCreacion",type:"timestamp"},{name:"fechaConfirmacion",type:"timestamp"},
+   {name:"fechaFinalizacion",type:"timestamp"}
+  ]},
+ {n:"pagos", path:"pagos/{idPago}", desc:"Control financiero de transacciones.",
+  fields:[
+   {k:"id",name:"idPago",type:"doc id"},
+   {ref:true,name:"idReserva",type:"ref → reservas"},
+   {ref:true,name:"idUsuario",type:"ref → usuarios"},
+   {name:"metodoPago",type:"string",enum:["tarjeta","yape","plin","efectivo"]},
+   {name:"proveedorPago",type:"string",enum:["mercadopago","stripe","culqi"]},
+   {name:"estado",type:"string",enum:["pendiente","pagado","fallido","reembolsado"]},
+   {name:"monto",type:"number"},{name:"comision",type:"number"},{name:"impuesto",type:"number"},
+   {name:"idTransaccion",type:"string"},
+   {name:"fechaPago",type:"timestamp"},{name:"fechaCreacion",type:"timestamp"}
+  ]},
+ {n:"reseñas", path:"reseñas/{idReseña}", desc:"Calificaciones y comentarios de jugadores.",
+  fields:[
+   {k:"id",name:"idReseña",type:"doc id"},
+   {ref:true,name:"idReserva",type:"ref → reservas"},
+   {ref:true,name:"idCancha",type:"ref → canchas"},
+   {ref:true,name:"idJugador",type:"ref → usuarios"},
+   {ref:true,name:"idDueño",type:"ref → perfiles_dueños"},
+   {name:"calificacion",type:"number"},{name:"comentario",type:"string"},
+   {name:"respuestaDueño",type:"string"},
+   {name:"imagenes",type:"array<string>"},
+   {name:"verificada",type:"boolean"},{name:"likes",type:"number"},
+   {name:"fechaCreacion",type:"timestamp"},{name:"fechaActualizacion",type:"timestamp"}
+  ]},
+ {n:"notificaciones", path:"notificaciones/{idNotificacion}", desc:"Notificaciones push.",
+  fields:[
+   {k:"id",name:"idNotificacion",type:"doc id"},
+   {ref:true,name:"idUsuario",type:"ref → usuarios"},
+   {name:"tipo",type:"string",enum:["reserva_confirmada","recordatorio","pago_exitoso","reseña_recibida","promocion"]},
+   {name:"titulo",type:"string"},{name:"mensaje",type:"string"},
+   {name:"leida",type:"boolean"},
+   {nested:true,name:"accion",type:"map (pantalla/idReferencia)"},
+   {name:"fechaCreacion",type:"timestamp"},{name:"fechaEnvio",type:"timestamp"}
+  ]},
+ {n:"chats", path:"chats/{idChat}", desc:"Mensajería entre jugadores y dueños. Incluye subcolección de mensajes.",
+  fields:[
+   {k:"id",name:"idChat",type:"doc id"},
+   {ref:true,name:"idReserva",type:"ref → reservas"},
+   {ref:true,name:"participantes",type:"array<ref> usuarios"},
+   {name:"ultimoMensaje",type:"string"},{name:"ultimoRemitente",type:"string"},
+   {name:"mensajesNoLeidos",type:"number"},
+   {name:"fechaActualizacion",type:"timestamp"}
+  ],
+  sub:[
+   {path:"chats/{idChat}/mensajes/{idMensaje}",
+    fields:[
+     {ref:true,name:"idRemitente",type:"ref → usuarios"},
+     {name:"tipo",type:"string",enum:["texto","imagen","ubicacion","audio"]},
+     {name:"texto",type:"string"},{name:"urlImagen",type:"string"},{name:"urlAudio",type:"string"},
+     {name:"leido",type:"boolean"},{name:"fechaCreacion",type:"timestamp"}
+    ]}
+  ]},
+ {n:"reportes", path:"reportes/{idReporte}", desc:"Reportes enviados por usuarios.",
+  fields:[
+   {k:"id",name:"idReporte",type:"doc id"},
+   {ref:true,name:"idUsuarioReporta",type:"ref → usuarios"},
+   {ref:true,name:"idUsuarioReportado",type:"ref → usuarios"},
+   {name:"motivo",type:"string"},{name:"descripcion",type:"string"},
+   {name:"evidencia",type:"array<string>"},
+   {name:"estado",type:"string",enum:["pendiente","revisando","resuelto"]},
+   {name:"fechaCreacion",type:"timestamp"},{name:"fechaResolucion",type:"timestamp"}
+  ]},
+ {n:"admins", path:"admins/{idAdmin}", desc:"Administradores del sistema.",
+  fields:[
+   {k:"id",name:"idAdmin",type:"doc id"},
+   {name:"nombreCompleto",type:"string"},{name:"correo",type:"string"},
+   {name:"rolAdmin",type:"string",enum:["super_admin","moderador"]},
+   {name:"permisos",type:"array<string>"},
+   {name:"activo",type:"boolean"},
+   {name:"fechaCreacion",type:"timestamp"},{name:"ultimoAcceso",type:"timestamp"}
+  ]}
+];
+
+const grid = document.getElementById('grid');
+schema.forEach((c,i)=>{
+  let html = `<div class="card" data-name="${c.n}">
+    <div class="chead" onclick="this.parentElement.classList.toggle('collapsed')">
+      <span class="num">${i+1}</span>
+      <span class="name">${c.n}<span class="slash">/${c.path.split('/')[1]||''}</span></span>
+      <span class="count">${c.fields.length} campos${c.sub?' · +sub':''}</span>
+      <span class="chev">▼</span>
+    </div>
+    <div class="cdesc">${c.desc}</div>
+    <div class="cbody">`;
+  c.fields.forEach(f=>{
+    const cls = f.k?'field key':(f.ref?'field ref':(f.nested?'field nested':'field'));
+    html += `<div class="${cls}"><span class="fname">${f.name.replace(/ /g,'&nbsp;')}</span><span class="ftype">${f.type}</span></div>`;
+    if(f.enum){ html += `<div class="enum">${f.enum.map(e=>`<span class="pill">${e}</span>`).join('')}</div>`; }
+  });
+  if(c.sub){ c.sub.forEach(s=>{
+    html += `<div class="subcoll"><div class="sc-head">↳ ${s.path}</div><div style="padding:4px 0">`;
+    s.fields.forEach(f=>{
+      const cls = f.ref?'field ref':(f.nested?'field nested':'field');
+      html += `<div class="${cls}"><span class="fname">${f.name.replace(/ /g,'&nbsp;')}</span><span class="ftype">${f.type}</span></div>`;
+      if(f.enum){ html += `<div class="enum">${f.enum.map(e=>`<span class="pill">${e}</span>`).join('')}</div>`; }
+    });
+    if(s.estados){ html += `<div class="enum" style="padding-left:14px">estados: ${s.estados.map(e=>`<span class="pill">${e}</span>`).join('')}</div>`; }
+    html += `</div></div>`;
+  });}
+  html += `</div></div>`;
+  grid.insertAdjacentHTML('beforeend', html);
+});
+
+function toggleAll(collapse){
+  document.querySelectorAll('.card').forEach(c=>c.classList.toggle('collapsed',collapse));
+}
+document.getElementById('search').addEventListener('input',e=>{
+  const q = e.target.value.toLowerCase().trim();
+  document.querySelectorAll('.card').forEach(card=>{
+    const txt = card.textContent.toLowerCase();
+    card.classList.toggle('hidden', q && !txt.includes(q));
+  });
+});
+</script>
+</body>
+</html>
