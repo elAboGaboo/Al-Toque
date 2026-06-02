@@ -21,14 +21,12 @@ class ReservasRepository {
     final fin = DateTime(fecha.year, fecha.month, fecha.day, 23, 59, 59);
 
     try {
-      // Filtramos por complejoId + canchaId en Firestore para reducir la
-      // cantidad de documentos descargados. La fecha se filtra en cliente
-      // porque añadir un tercer campo al where requeriría un índice compuesto
-      // adicional. Con los índices actuales esto ya es eficiente.
+      // Solo filtramos por complejoId en Firestore (campo único = sin índice).
+      // canchaId y fecha se filtran en cliente — evita requerir índices
+      // compuestos que necesitan permisos de despliegue en Firebase Console.
       final snap = await _db
           .collection(FirestorePaths.reservas)
           .where('complejoId', isEqualTo: complejoId)
-          .where('canchaId', isEqualTo: canchaId)
           .get()
           .timeout(
             const Duration(seconds: 8),
@@ -40,6 +38,7 @@ class ReservasRepository {
       return snap.docs
           .map(ReservaModel.fromFirestore)
           .where((r) =>
+              r.canchaId == canchaId &&
               !r.fecha.isBefore(inicio) &&
               !r.fecha.isAfter(fin) &&
               (r.estaConfirmada || r.estaPendiente))
