@@ -75,25 +75,26 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       // ── Autenticado: leer perfil ─────────────────────────────────
       final perfilAsync = ref.read(perfilUsuarioProvider);
 
-      // Perfil aun cargando (stream conectando): ir a /loading y esperar
-      // el refresh del perfilUsuarioProvider para continuar.
+      // Perfil aun cargando (stream conectando).
+      // - Rutas publicas: bloquear hasta tener perfil.
+      // - /loading: dejar pasar (evita loop /loading → /loading).
+      // - Rutas de app: dejar pasar — la pantalla gestiona su propio loading.
+      //   El router se refresca cuando perfilUsuarioProvider emita.
       if (perfilAsync.asData == null) {
-        if (isPublic || loc == '/loading') return '/loading';
-        // Ya en una ruta de app: esperar que llegue el perfil.
-        // El router se refresca cuando perfilUsuarioProvider emita.
-        return '/loading';
+        if (isPublic) return '/loading';
+        if (loc == '/loading') return null;
+        return null;
       }
 
       final perfil = perfilAsync.asData!.value;
       final isAdminRoute = loc.startsWith('/admin');
 
-      // Perfil null = documento no existe en Firestore.
-      // Puede ser un estado transitorio (recien creado, cache local tarde)
-      // o un error real. Esperar otro ciclo de refresh en /loading.
+      // Perfil null = documento no existe en Firestore todavia.
+      // Ocurre en la ventana entre escritura y primera emision del stream.
       if (perfil == null) {
-        if (isPublic) return '/loading';
-        if (loc == '/loading') return null; // esperar
-        return '/loading'; // cualquier otra ruta: esperar el perfil
+        if (isAdminRoute) return '/welcome';
+        if (isPublic || loc == '/loading') return '/inicio';
+        return null; // rutas de usuario: dejar pasar
       }
 
       final esDueno = perfil.esDueno;
