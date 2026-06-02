@@ -49,37 +49,24 @@ class UsuariosRepository {
     }, SetOptions(merge: true));
   }
 
-  /// Crea un perfil inicial al registrarse — solo los campos del modelo.
+  /// Crea el perfil mínimo al registrarse.
+  /// Solo campos esenciales para el router y la app.
+  /// El resto (telefono, genero, dni, avatarUrl…) se puede actualizar
+  /// desde la pantalla de perfil cuando el usuario lo necesite.
   Future<void> crearPerfil({
     required String uid,
     required String nombre,
     required String email,
-    String rol = 'jugador',
-    String dni = '',
-    String telefono = '',
-    String genero = '',
-    String? complejoId,
+    required String rol, // 'jugador' | 'dueno'
   }) async {
-    final iniciales = nombre
-        .trim()
-        .split(' ')
-        .where((w) => w.isNotEmpty)
-        .take(2)
-        .map((w) => w[0].toUpperCase())
-        .join();
-
     await _db.doc(FirestorePaths.usuarioDoc(uid)).set({
-      'nombre':        nombre,
-      'iniciales':     iniciales,
-      'email':         email,
-      'telefono':      telefono,
-      'genero':        genero,
-      'dni':           dni,
-      'avatarUrl':     '',
-      'rol':           rol,
-      'complejoId':    complejoId,
-      'numeroCanchas': 0,
-      'creadoEn':      FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+      'nombre':     nombre,
+      'email':      email,
+      'rol':        rol,
+      'complejoId': null,
+      'creadoEn':   FieldValue.serverTimestamp(),
+    });
+    // Nota: sin SetOptions.merge para asegurar escritura limpia.
+    // Campos opcionales (telefono, genero, dni…) se agregan después.
   }
 }

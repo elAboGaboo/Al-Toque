@@ -61,15 +61,12 @@ class AuthNotifier extends AsyncNotifier<void> {
     });
   }
 
-  /// Registro de nuevo usuario.
+  /// Registro de nuevo usuario con perfil mínimo en Firestore.
   Future<String?> registrar({
     required String nombre,
     required String email,
     required String password,
     String rol = 'jugador',
-    String dni = '',
-    String telefono = '',
-    String genero = '',
   }) async {
     state = const AsyncLoading();
     String? uid;
@@ -85,11 +82,9 @@ class AuthNotifier extends AsyncNotifier<void> {
               nombre: nombre,
               email: email.trim(),
               rol: rol,
-              dni: dni,
-              telefono: telefono,
-              genero: genero,
             );
-      } catch (_) {
+      } catch (e) {
+        // Si falla la escritura en Firestore, eliminar el usuario de Auth.
         await cred.user!.delete();
         rethrow;
       }

@@ -1,4 +1,4 @@
-// screens/auth/registro_screen.dart
+// pantallas/autenticacion/registro_pantalla.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -8,6 +8,9 @@ import '../../nucleo/constantes/app_constantes.dart';
 import '../../nucleo/tema/app_colores.dart';
 import '../../proveedores/auth_proveedor.dart';
 
+/// Formulario de registro: jugador o dueño.
+/// Solo recopila nombre, email y contraseña — los datos opcionales
+/// (teléfono, género, DNI) se pueden completar en la pantalla de perfil.
 class RegistroScreen extends ConsumerStatefulWidget {
   final String rolInicial; // 'jugador' | 'dueno'
   const RegistroScreen({super.key, this.rolInicial = 'jugador'});
@@ -17,15 +20,12 @@ class RegistroScreen extends ConsumerStatefulWidget {
 }
 
 class _RegistroScreenState extends ConsumerState<RegistroScreen> {
-  final _formKey = GlobalKey<FormState>();
+  final _formKey    = GlobalKey<FormState>();
   final _nombreCtrl = TextEditingController();
-  final _dniCtrl    = TextEditingController();
-  final _telefonoCtrl = TextEditingController();
   final _emailCtrl  = TextEditingController();
   final _passCtrl   = TextEditingController();
   final _confirmCtrl = TextEditingController();
   final _codigoCtrl = TextEditingController();
-  String? _genero; // 'masculino' | 'femenino' | 'otro'
   bool _obscure = true;
   bool _obscureConfirm = true;
   bool _loading = false;
@@ -35,8 +35,6 @@ class _RegistroScreenState extends ConsumerState<RegistroScreen> {
   @override
   void dispose() {
     _nombreCtrl.dispose();
-    _dniCtrl.dispose();
-    _telefonoCtrl.dispose();
     _emailCtrl.dispose();
     _passCtrl.dispose();
     _confirmCtrl.dispose();
@@ -46,6 +44,8 @@ class _RegistroScreenState extends ConsumerState<RegistroScreen> {
 
   Future<void> _registrar() async {
     if (!_formKey.currentState!.validate()) return;
+
+    // Código de acceso para dueños
     if (_esDueno &&
         _codigoCtrl.text.trim() != AppConstants.codigoRegistroDueno) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -56,68 +56,59 @@ class _RegistroScreenState extends ConsumerState<RegistroScreen> {
       ));
       return;
     }
+
     setState(() => _loading = true);
 
     await ref.read(authNotifierProvider.notifier).registrar(
-          nombre: _nombreCtrl.text.trim(),
-          email: _emailCtrl.text.trim(),
+          nombre:   _nombreCtrl.text.trim(),
+          email:    _emailCtrl.text.trim(),
           password: _passCtrl.text,
-          rol: widget.rolInicial,
-          dni: _esDueno ? '' : _dniCtrl.text.trim(),
-          telefono: _telefonoCtrl.text.trim(),
-          genero: _genero ?? '',
+          rol:      widget.rolInicial,
         );
 
-    if (mounted) {
-      final state = ref.read(authNotifierProvider);
-      if (state.hasError) {
-        final err = state.error.toString();
-        // Imprime el error completo en la consola para debug
-        debugPrint('[Registro] Error completo: $err');
-        final errLower = err.toLowerCase();
+    if (!mounted) return;
 
-        String msg;
-        if (errLower.contains('email-already-in-use')) {
-          msg = 'Este correo ya está registrado';
-        } else if (errLower.contains('weak-password')) {
-          msg = 'Contraseña muy débil (mínimo 6 caracteres)';
-        } else if (errLower.contains('invalid-email')) {
-          msg = 'Correo inválido';
-        } else if (errLower.contains('operation-not-allowed') ||
-            errLower.contains('configuration-not-found') ||
-            errLower.contains('configuration_not_found')) {
-          msg = 'Email/Password no habilitado en Firebase Console.\n'
-              'Actívalo en: Authentication → Sign-in method → Email/Password';
-        } else if (errLower.contains('network-request-failed') ||
-            errLower.contains('network_request_failed')) {
-          msg = 'Sin conexión a internet';
-        } else if (errLower.contains('no-app') ||
-            errLower.contains('no firebase app')) {
-          msg = 'Firebase no inicializado — revisa firebase_options.dart';
-        } else if (errLower.contains('permission-denied') ||
-            errLower.contains('permission_denied')) {
-          msg = 'Firestore: permisos denegados (revisa reglas)';
-        } else {
-          // Muestra el error real para poder diagnosticarlo
-          msg = err.length > 200 ? '${err.substring(0, 200)}…' : err;
-        }
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(msg, style: GoogleFonts.outfit()),
-            backgroundColor: AppColors.errorRed,
-            duration: const Duration(seconds: 8),
-          ),
-        );
-        setState(() => _loading = false);
+    final state = ref.read(authNotifierProvider);
+    if (state.hasError) {
+      final err = state.error.toString();
+      debugPrint('[Registro] Error: $err');
+      final lower = err.toLowerCase();
+
+      String msg;
+      if (lower.contains('email-already-in-use')) {
+        msg = 'Este correo ya está registrado';
+      } else if (lower.contains('weak-password')) {
+        msg = 'Contraseña muy débil (mínimo 6 caracteres)';
+      } else if (lower.contains('invalid-email')) {
+        msg = 'Correo inválido';
+      } else if (lower.contains('operation-not-allowed') ||
+          lower.contains('configuration-not-found')) {
+        msg = 'Email/Password no habilitado en Firebase.\n'
+            'Actívalo en: Authentication → Sign-in method';
+      } else if (lower.contains('network-request-failed')) {
+        msg = 'Sin conexión a internet';
+      } else if (lower.contains('permission-denied')) {
+        msg = 'Firestore: permisos denegados — revisa las reglas';
       } else {
-        // Navegar explícitamente — no depender del redirect de GoRouter
-        // porque hay una ventana de tiempo donde el doc de Firestore aún
-        // no llegó al stream y el router envía de vuelta a /welcome.
-        if (_esDueno) {
-          context.go('/admin/setup-complejo');
-        } else {
-          context.go('/inicio');
-        }
+        msg = err.length > 200 ? '${err.substring(0, 200)}…' : err;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(msg, style: GoogleFonts.outfit()),
+          backgroundColor: AppColors.errorRed,
+          duration: const Duration(seconds: 8),
+        ),
+      );
+      setState(() => _loading = false);
+    } else {
+      // El router redirige automáticamente cuando el perfil llega de
+      // Firestore (perfilUsuarioProvider → routerNotifier → redirect).
+      // La navegación explícita es un respaldo por si el stream tarda.
+      if (_esDueno) {
+        context.go('/admin/setup-complejo');
+      } else {
+        context.go('/inicio');
       }
     }
   }
@@ -164,7 +155,7 @@ class _RegistroScreenState extends ConsumerState<RegistroScreen> {
                 ),
                 const SizedBox(height: 32),
 
-                // Nombre completo
+                // ── Nombre completo ───────────────────────────
                 TextFormField(
                   controller: _nombreCtrl,
                   textCapitalization: TextCapitalization.words,
@@ -177,105 +168,14 @@ class _RegistroScreenState extends ConsumerState<RegistroScreen> {
                         color: AppColors.green, size: 20),
                   ),
                   validator: (v) {
-                    if (v == null || v.trim().isEmpty) {
-                      return 'Ingresa tu nombre';
-                    }
+                    if (v == null || v.trim().isEmpty) return 'Ingresa tu nombre';
                     if (v.trim().length < 3) return 'Nombre muy corto';
                     return null;
                   },
                 ),
-                // DNI — solo jugadores
-                if (!_esDueno) ...[
-                  const SizedBox(height: 14),
-                  TextFormField(
-                    controller: _dniCtrl,
-                    keyboardType: TextInputType.number,
-                    textInputAction: TextInputAction.next,
-                    maxLength: 8,
-                    decoration: InputDecoration(
-                      labelText: 'DNI',
-                      hintText: '12345678',
-                      counterText: '',
-                      labelStyle: GoogleFonts.outfit(
-                          color: AppColors.ink.withValues(alpha: 0.5)),
-                      prefixIcon: const Icon(Icons.badge_outlined,
-                          color: AppColors.green, size: 20),
-                    ),
-                    validator: (v) {
-                      if (_esDueno) return null;
-                      if (v == null || v.trim().isEmpty) return 'Ingresa tu DNI';
-                      if (v.trim().length != 8) return 'El DNI debe tener 8 dígitos';
-                      if (!RegExp(r'^\d{8}$').hasMatch(v.trim())) {
-                        return 'Solo números';
-                      }
-                      return null;
-                    },
-                  ),
-                ],
-
                 const SizedBox(height: 14),
 
-                // Teléfono
-                TextFormField(
-                  controller: _telefonoCtrl,
-                  keyboardType: TextInputType.phone,
-                  textInputAction: TextInputAction.next,
-                  maxLength: 9,
-                  decoration: InputDecoration(
-                    labelText: 'Número de teléfono',
-                    hintText: '987654321',
-                    counterText: '',
-                    labelStyle: GoogleFonts.outfit(
-                        color: AppColors.ink.withValues(alpha: 0.5)),
-                    prefixIcon: const Icon(Icons.phone_outlined,
-                        color: AppColors.green, size: 20),
-                  ),
-                  validator: (v) {
-                    if (v == null || v.trim().isEmpty) {
-                      return 'Ingresa tu número de teléfono';
-                    }
-                    if (!RegExp(r'^\d{9}$').hasMatch(v.trim())) {
-                      return 'Debe tener 9 dígitos';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 14),
-
-                // Género
-                DropdownButtonFormField<String>(
-                  initialValue: _genero,
-                  decoration: InputDecoration(
-                    labelText: 'Género',
-                    labelStyle: GoogleFonts.outfit(
-                        color: AppColors.ink.withValues(alpha: 0.5)),
-                    prefixIcon: const Icon(Icons.wc_outlined,
-                        color: AppColors.green, size: 20),
-                  ),
-                  style: GoogleFonts.outfit(
-                      color: AppColors.ink, fontSize: 16),
-                  items: [
-                    DropdownMenuItem(
-                      value: 'masculino',
-                      child: Text('Masculino', style: GoogleFonts.outfit()),
-                    ),
-                    DropdownMenuItem(
-                      value: 'femenino',
-                      child: Text('Femenino', style: GoogleFonts.outfit()),
-                    ),
-                    DropdownMenuItem(
-                      value: 'otro',
-                      child: Text('Prefiero no decir',
-                          style: GoogleFonts.outfit()),
-                    ),
-                  ],
-                  onChanged: (v) => setState(() => _genero = v),
-                  validator: (v) =>
-                      v == null ? 'Selecciona tu género' : null,
-                ),
-                const SizedBox(height: 14),
-
-                // Email
+                // ── Correo electrónico ────────────────────────
                 TextFormField(
                   controller: _emailCtrl,
                   keyboardType: TextInputType.emailAddress,
@@ -297,7 +197,7 @@ class _RegistroScreenState extends ConsumerState<RegistroScreen> {
                 ),
                 const SizedBox(height: 14),
 
-                // Contraseña
+                // ── Contraseña ────────────────────────────────
                 TextFormField(
                   controller: _passCtrl,
                   obscureText: _obscure,
@@ -328,12 +228,13 @@ class _RegistroScreenState extends ConsumerState<RegistroScreen> {
                 ),
                 const SizedBox(height: 14),
 
-                // Confirmar contraseña
+                // ── Confirmar contraseña ──────────────────────
                 TextFormField(
                   controller: _confirmCtrl,
                   obscureText: _obscureConfirm,
-                  textInputAction: TextInputAction.done,
-                  onFieldSubmitted: (_) => _registrar(),
+                  textInputAction:
+                      _esDueno ? TextInputAction.next : TextInputAction.done,
+                  onFieldSubmitted: _esDueno ? null : (_) => _registrar(),
                   decoration: InputDecoration(
                     labelText: 'Confirmar contraseña',
                     labelStyle: GoogleFonts.outfit(
@@ -359,7 +260,8 @@ class _RegistroScreenState extends ConsumerState<RegistroScreen> {
                     return null;
                   },
                 ),
-                // Código secreto — solo para dueños de complejo
+
+                // ── Código de acceso (solo dueños) ────────────
                 if (_esDueno) ...[
                   const SizedBox(height: 14),
                   TextFormField(
@@ -385,7 +287,7 @@ class _RegistroScreenState extends ConsumerState<RegistroScreen> {
 
                 const SizedBox(height: 28),
 
-                // Términos
+                // ── Términos ──────────────────────────────────
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -406,7 +308,7 @@ class _RegistroScreenState extends ConsumerState<RegistroScreen> {
                 ),
                 const SizedBox(height: 24),
 
-                // Botón registrar
+                // ── Botón registrar ───────────────────────────
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
@@ -431,7 +333,7 @@ class _RegistroScreenState extends ConsumerState<RegistroScreen> {
                 ),
                 const SizedBox(height: 16),
 
-                // Ya tengo cuenta
+                // ── Ya tengo cuenta ───────────────────────────
                 Center(
                   child: TextButton(
                     onPressed: () => context.pop(),

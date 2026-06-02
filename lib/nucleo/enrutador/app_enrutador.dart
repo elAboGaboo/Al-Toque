@@ -36,13 +36,17 @@ final _shellNavigatorKey = GlobalKey<NavigatorState>();
 final _userShellNavigatorKey = GlobalKey<NavigatorState>();
 
 final appRouterProvider = Provider<GoRouter>((ref) {
-  // Solo escuchamos authState para el redirect.
-  // perfilUsuario NO refresca el router — si lo hiciera, cada emision de
-  // Firestore limpiaria la pila del ShellRoute y causaria el redirect
-  // /complejo/:id → /inicio que bloqueaba la navegacion.
+  // Escuchamos authState Y perfilUsuario.
+  // Ahora es seguro escuchar ambos porque las rutas de detalle
+  // (/complejo, /reservar...) están en el root navigator — no en el
+  // ShellRoute — así que un refresh del perfil ya no destruye la pila
+  // de navegación ni causa el redirect /complejo/:id → /inicio.
   final routerNotifier = ValueNotifier<int>(0);
 
   ref.listen(authStateProvider, (_, _) {
+    routerNotifier.value++;
+  });
+  ref.listen(perfilUsuarioProvider, (_, _) {
     routerNotifier.value++;
   });
 
@@ -71,21 +75,25 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       // ── Autenticado: leer perfil ─────────────────────────────────
       final perfilAsync = ref.read(perfilUsuarioProvider);
 
-      // Perfil cargando: rutas de app pasan, publicas van a /loading.
+      // Perfil aun cargando (stream conectando): ir a /loading y esperar
+      // el refresh del perfilUsuarioProvider para continuar.
       if (perfilAsync.asData == null) {
-        if (isPublic) return '/loading';
-        if (loc == '/loading') return null;
-        return null;
+        if (isPublic || loc == '/loading') return '/loading';
+        // Ya en una ruta de app: esperar que llegue el perfil.
+        // El router se refresca cuando perfilUsuarioProvider emita.
+        return '/loading';
       }
 
       final perfil = perfilAsync.asData!.value;
       final isAdminRoute = loc.startsWith('/admin');
 
-      // Sin documento de perfil (registro parcial / red muy lenta).
+      // Perfil null = documento no existe en Firestore.
+      // Puede ser un estado transitorio (recien creado, cache local tarde)
+      // o un error real. Esperar otro ciclo de refresh en /loading.
       if (perfil == null) {
-        if (isAdminRoute) return '/welcome';
-        if (isPublic || loc == '/loading') return '/inicio';
-        return null;
+        if (isPublic) return '/loading';
+        if (loc == '/loading') return null; // esperar
+        return '/loading'; // cualquier otra ruta: esperar el perfil
       }
 
       final esDueno = perfil.esDueno;
@@ -123,9 +131,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/loading',
         parentNavigatorKey: _rootNavigatorKey,
-        builder: (_, _) => const Scaffold(
-          body: Center(child: CircularProgressIndicator()),
-        ),
+        builder: (_, _) => const _LoadingScreen(),
       ),
 
       // ── Auth ─────────────────────────────────────────────────────
@@ -300,3 +306,49 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     ],
   );
 });
+
+// ── Pantalla de carga con escape si el perfil tarda demasiado ─────────────────
+
+class _LoadingScreen extends StatefulWidget {
+  const _LoadingScreen();
+
+  @override
+  State<_LoadingScreen> createState() => _LoadingScreenState();
+}
+
+class _LoadingScreenState extends State<_LoadingScreen> {
+  bool _showEscape = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Después de 6 s sin resolver, mostramos el botón de salida.
+    Future.delayed(const Duration(seconds: 6), () {
+      if (mounted) setState(() => _showEscape = true);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CircularProgressIndicator(),
+            if (_showEscape) ...[
+              const SizedBox(height: 32),
+              TextButton(
+                onPressed: () async {
+                  // Cerramos sesión y volvemos a la pantalla de inicio
+                  await FirebaseAuth.instance.signOut();
+                },
+                child: const Text('Volver al inicio'),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
