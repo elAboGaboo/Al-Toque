@@ -404,6 +404,7 @@ class _MapaScreenState extends ConsumerState<MapaScreen> {
                   selectedId: _selectedComplejo?.id,
                   onTap: _onComplejoTap,
                   onVerCanchas: (c) {
+                    if (c.id.isEmpty) return;
                     ref.read(complejoSeleccionadoProvider.notifier).select(c);
                     context.push('/complejo/${c.id}');
                   },

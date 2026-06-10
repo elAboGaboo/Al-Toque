@@ -1,4 +1,4 @@
-// screens/usuario/reservar_screen.dart
+﻿// screens/usuario/reservar_screen.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -38,11 +38,12 @@ class _ReservarScreenState extends ConsumerState<ReservarScreen> {
   CanchaModel? _cancha;
   ComplejoModel? _complejo;
 
+  static DateTime _soloFecha(DateTime d) => DateTime(d.year, d.month, d.day);
+
   @override
   void initState() {
     super.initState();
-    final now = DateTime.now();
-    _fechaSeleccionada = DateTime(now.year, now.month, now.day);
+    _fechaSeleccionada = _soloFecha(DateTime.now());
 
     // Leer cancha y complejo del provider (seteados antes de navegar).
     final cachedCancha = ref.read(canchaSeleccionadaProvider);
@@ -59,11 +60,12 @@ class _ReservarScreenState extends ConsumerState<ReservarScreen> {
   Widget build(BuildContext context) {
     // Disponibilidad: siempre va a Firestore (datos en tiempo real, timeout 8s).
     // La clave cambia con la fecha → auto-refetch al cambiar día.
+    final fechaConsulta = _soloFecha(_fechaSeleccionada);
     final disponibilidadAsync = ref.watch(
       disponibilidadFutureProvider((
         complejoId: widget.complejoId,
         canchaId: widget.canchaId,
-        fecha: _fechaSeleccionada,
+        fecha: fechaConsulta,
       )),
     );
     final isLoading = ref.watch(reservaNotifierProvider).isLoading;
@@ -114,7 +116,7 @@ class _ReservarScreenState extends ConsumerState<ReservarScreen> {
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
-          onPressed: () => context.pop(),
+          onPressed: () => context.canPop() ? context.pop() : context.go('/inicio'),
         ),
         title: Text(
           'Reservar cancha',
@@ -155,7 +157,7 @@ class _ReservarScreenState extends ConsumerState<ReservarScreen> {
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
-          onPressed: () => context.pop(),
+          onPressed: () => context.canPop() ? context.pop() : context.go('/inicio'),
         ),
         title: Text(
           cancha.nombre,
@@ -197,8 +199,7 @@ class _ReservarScreenState extends ConsumerState<ReservarScreen> {
               _HorizontalCalendar(
                 selectedDate: _fechaSeleccionada,
                 onDateSelected: (d) => setState(() {
-                  // Normalizar siempre al seleccionar
-                  _fechaSeleccionada = DateTime(d.year, d.month, d.day);
+                  _fechaSeleccionada = _soloFecha(d);
                   _horaSeleccionada = null;
                 }),
               ),
@@ -227,42 +228,88 @@ class _ReservarScreenState extends ConsumerState<ReservarScreen> {
               ),
               const SizedBox(height: 14),
 
-              disponibilidadAsync.when(
-                loading: () => const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 32),
-                  child: Center(
-                    child: CircularProgressIndicator(
-                        color: AppColors.acc, strokeWidth: 2.5),
-                  ),
-                ),
-                error: (e, _) => Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: _SlotsErrorBanner(
-                    onRetry: () => ref.invalidate(
-                      disponibilidadFutureProvider((
-                        complejoId: widget.complejoId,
-                        canchaId: widget.canchaId,
-                        fecha: _fechaSeleccionada,
-                      )),
-                    ),
-                  ),
-                ),
-                data: (reservas) => Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: _TimeSlotsGrid(
-                    slots: slots,
-                    ocupadas: reservas
+              // Disponibilidad: si falla la consulta, mostramos los slots
+              // como disponibles (sin verificar ocupación). El usuario
+              // podrá intentar reservar y verá el error solo si el slot
+              // realmente está tomado al momento de confirmar.
+              Builder(builder: (_) {
+                final ocupadas = disponibilidadAsync.asData?.value
                         .where((r) => r.estado != 'cancelada')
                         .map((r) => r.horaInicio)
-                        .toList(),
-                    fecha: _fechaSeleccionada,
-                    precio: cancha.precioBase,
-                    selectedTime: _horaSeleccionada,
-                    onTimeSelected: (t) =>
-                        setState(() => _horaSeleccionada = t),
-                  ),
-                ),
-              ),
+                        .toList() ??
+                    [];
+                final hayError = disponibilidadAsync.hasError;
+
+                return Column(
+                  children: [
+                    if (hayError)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: AppColors.amber.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                                color: AppColors.amber.withValues(alpha: 0.3)),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.wifi_off_rounded,
+                                  size: 14, color: AppColors.amber),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Sin conexión — mostrando horarios estimados',
+                                  style: GoogleFonts.plusJakartaSans(
+                                      fontSize: 11, color: AppColors.amber),
+                                ),
+                              ),
+                              GestureDetector(
+                                onTap: () => ref.invalidate(
+                                    disponibilidadFutureProvider((
+                                  complejoId: widget.complejoId,
+                                  canchaId: widget.canchaId,
+                                  fecha: _fechaSeleccionada,
+                                ))),
+                                child: Text('Reintentar',
+                                    style: GoogleFonts.outfit(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppColors.amber)),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                    else if (disponibilidadAsync.isLoading)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 16),
+                        child: Center(
+                          child: SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                                color: AppColors.acc, strokeWidth: 2),
+                          ),
+                        ),
+                      ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: _TimeSlotsGrid(
+                        slots: slots,
+                        ocupadas: ocupadas,
+                        fecha: _fechaSeleccionada,
+                        precio: cancha.precioBase,
+                        selectedTime: _horaSeleccionada,
+                        onTimeSelected: (t) =>
+                            setState(() => _horaSeleccionada = t),
+                      ),
+                    ),
+                  ],
+                );
+              }),
 
               const SizedBox(height: 140),
             ],
@@ -281,7 +328,14 @@ class _ReservarScreenState extends ConsumerState<ReservarScreen> {
             metodoPago: _metodoPago,
             onMetodoPagoTap: _mostrarSelectorPago,
             isLoading: isLoading,
-            onConfirm: () => _confirmarReserva(cancha),
+            onConfirm: () => _confirmarReserva(
+              cancha,
+              disponibilidadAsync.asData?.value
+                      .where((r) => r.estado != 'cancelada')
+                      .map((r) => r.horaInicio)
+                      .toList() ??
+                  [],
+            ),
           ),
         ),
       ],
@@ -302,16 +356,36 @@ class _ReservarScreenState extends ConsumerState<ReservarScreen> {
     );
   }
 
-  Future<void> _confirmarReserva(CanchaModel cancha) async {
+  /// Muestra el diálogo de pago simulado, luego crea la reserva en Firestore.
+  Future<void> _confirmarReserva(
+    CanchaModel cancha,
+    List<String> ocupadas,
+  ) async {
     if (_horaSeleccionada == null) return;
 
+    if (ocupadas.contains(_horaSeleccionada)) {
+      _mostrarError('Ese horario acaba de ser reservado. Elige otro.');
+      ref.invalidate(disponibilidadFutureProvider((
+        complejoId: widget.complejoId,
+        canchaId: widget.canchaId,
+        fecha: _soloFecha(_fechaSeleccionada),
+      )));
+      return;
+    }
+
+    // 1 ── Mostrar diálogo de pago simulado ─────────────────────────────────
+    final confirmar = await _mostrarDialogoPago(cancha.precioBase);
+    if (!mounted || confirmar != true) return;
+
+    // 2 ── Crear reserva en Firestore ────────────────────────────────────────
     try {
+      final fecha = _soloFecha(_fechaSeleccionada);
       final horaFin = _calcularHoraFin(_horaSeleccionada!);
       final reservaId =
           await ref.read(reservaNotifierProvider.notifier).crearReserva(
                 complejoId: widget.complejoId,
                 canchaId: widget.canchaId,
-                fecha: _fechaSeleccionada,
+                fecha: fecha,
                 horaInicio: _horaSeleccionada!,
                 horaFin: horaFin,
                 duracionHoras: 1.0,
@@ -322,29 +396,44 @@ class _ReservarScreenState extends ConsumerState<ReservarScreen> {
       if (!mounted) return;
 
       if (reservaId != null) {
+        ref.invalidate(disponibilidadFutureProvider((
+          complejoId: widget.complejoId,
+          canchaId: widget.canchaId,
+          fecha: fecha,
+        )));
         context.pushReplacement('/confirmacion/$reservaId');
       } else {
-        // AsyncValue.guard capturó la excepción → leer mensaje del notifier.
-        final estado = ref.read(reservaNotifierProvider);
-        final rawMsg = estado.error?.toString() ?? '';
-        final mensaje = _mensajeAmigable(rawMsg);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(mensaje),
-            backgroundColor: AppColors.red,
-          ),
-        );
+        final rawMsg =
+            ref.read(reservaNotifierProvider).error?.toString() ?? '';
+        _mostrarError(_mensajeAmigable(rawMsg));
       }
     } catch (e) {
-      // Capa de seguridad: si algo escapa del guard (no debería).
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(_mensajeAmigable(e.toString())),
-          backgroundColor: AppColors.red,
-        ),
-      );
+      _mostrarError(_mensajeAmigable(e.toString()));
     }
+  }
+
+  /// Diálogo de pago simulado: procesa 1.5 s y cierra retornando true.
+  Future<bool?> _mostrarDialogoPago(double precio) {
+    return showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _PagoDialog(
+        metodoPago: _metodoPago,
+        precio: precio,
+      ),
+    );
+  }
+
+  void _mostrarError(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: AppColors.red,
+        duration: const Duration(seconds: 5),
+      ),
+    );
   }
 
   /// Convierte un mensaje de excepción técnico en texto para el usuario.
@@ -498,7 +587,7 @@ class _HorizontalCalendar extends StatelessWidget {
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 20),
         itemCount: 14,
-        separatorBuilder: (_, _) => const SizedBox(width: 8),
+        separatorBuilder: (_, idx) => const SizedBox(width: 8),
         itemBuilder: (context, i) {
           final date = hoy.add(Duration(days: i)); // fecha normalizada
           final isSelected = date.day == selectedDate.day &&
@@ -629,9 +718,13 @@ class _TimeSlotsGrid extends StatelessWidget {
     if (dia.isAfter(hoy)) return false;
     // Día pasado → todos los slots ya pasaron
     if (dia.isBefore(hoy)) return true;
-    // Mismo día → comparar hora
-    final hora = int.parse(slot.split(':')[0]);
-    return hora <= now.hour;
+    // Mismo día → comparar hora y minutos
+    final parts = slot.split(':');
+    final slotHora = int.parse(parts[0]);
+    final slotMin = int.parse(parts[1]);
+    if (slotHora < now.hour) return true;
+    if (slotHora > now.hour) return false;
+    return slotMin <= now.minute;
   }
 
   @override
@@ -1003,61 +1096,6 @@ class _MetodoPagoSheet extends StatelessWidget {
   }
 }
 
-// ── Error banner para horarios (permite reintentar sin salir de pantalla) ─────
-
-class _SlotsErrorBanner extends StatelessWidget {
-  final VoidCallback onRetry;
-  const _SlotsErrorBanner({required this.onRetry});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: AppColors.sur,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.bdr2),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.wifi_off_rounded, color: AppColors.red, size: 28),
-          const SizedBox(height: 10),
-          Text(
-            'No se pudieron cargar los horarios',
-            style: GoogleFonts.bricolageGrotesque(
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-              color: AppColors.tx,
-            ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Verifica tu conexión e intenta de nuevo.',
-            style: GoogleFonts.plusJakartaSans(
-                fontSize: 12, color: AppColors.tx3, height: 1.4),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 14),
-          FilledButton.icon(
-            onPressed: onRetry,
-            icon: const Icon(Icons.refresh_rounded, size: 15),
-            label: Text('Reintentar',
-                style: GoogleFonts.outfit(fontWeight: FontWeight.w700)),
-            style: FilledButton.styleFrom(
-              backgroundColor: AppColors.acc,
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10)),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
 
 // ── Error recuperable: cancha/complejo no disponibles (deep link) ─────────────
 
@@ -1115,6 +1153,126 @@ class _ErrorRecuperable extends StatelessWidget {
                     borderRadius: BorderRadius.circular(12)),
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Diálogo de pago simulado ──────────────────────────────────────────────────
+
+class _PagoDialog extends StatefulWidget {
+  final String metodoPago;
+  final double precio;
+  const _PagoDialog({required this.metodoPago, required this.precio});
+
+  @override
+  State<_PagoDialog> createState() => _PagoDialogState();
+}
+
+class _PagoDialogState extends State<_PagoDialog>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+  bool _aprobado = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    )..forward().then((_) {
+        if (mounted) setState(() => _aprobado = true);
+        Future.delayed(const Duration(milliseconds: 600), () {
+          if (mounted) Navigator.of(context).pop(true);
+        });
+      });
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  String get _metodoLabel {
+    const m = {
+      'yape': 'Yape 💜',
+      'plin': 'Plin 💙',
+      'efectivo': 'Efectivo 💵',
+      'tarjeta': 'Tarjeta 💳',
+    };
+    return m[widget.metodoPago] ?? widget.metodoPago;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: AppColors.sur,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 300),
+              child: _aprobado
+                  ? Container(
+                      key: const ValueKey('ok'),
+                      width: 56,
+                      height: 56,
+                      decoration: const BoxDecoration(
+                        color: AppColors.acc,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.check_rounded,
+                          color: Colors.white, size: 32),
+                    )
+                  : const SizedBox(
+                      key: ValueKey('spin'),
+                      width: 56,
+                      height: 56,
+                      child: CircularProgressIndicator(
+                          color: AppColors.acc, strokeWidth: 3),
+                    ),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              _aprobado ? '¡Pago aprobado!' : 'Procesando pago…',
+              style: GoogleFonts.bricolageGrotesque(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: AppColors.tx,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(_metodoLabel,
+                style: GoogleFonts.plusJakartaSans(
+                    fontSize: 13, color: AppColors.tx3)),
+            const SizedBox(height: 4),
+            Text(
+              'S/ ${widget.precio.toStringAsFixed(2)}',
+              style: GoogleFonts.bricolageGrotesque(
+                fontSize: 22,
+                fontWeight: FontWeight.w700,
+                color: AppColors.acc,
+              ),
+            ),
+            if (!_aprobado) ...[
+              const SizedBox(height: 16),
+              AnimatedBuilder(
+                animation: _ctrl,
+                builder: (_, idx) => LinearProgressIndicator(
+                  value: _ctrl.value,
+                  backgroundColor: AppColors.bdr2,
+                  valueColor:
+                      const AlwaysStoppedAnimation<Color>(AppColors.acc),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+            ],
           ],
         ),
       ),

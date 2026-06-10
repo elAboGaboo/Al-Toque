@@ -56,6 +56,22 @@ class CanchaModel {
     return emojis[deporte] ?? '🏟️';
   }
 
+  factory CanchaModel.fromMap(Map<String, dynamic> d, {required String complejoId}) {
+    return CanchaModel(
+      id: d['id'] as String? ?? '',
+      complejoId: complejoId,
+      nombre: d['nombre'] as String? ?? '',
+      deporte: d['deporte'] as String? ?? 'futbol5',
+      superficie: d['superficie'] as String? ?? 'sintetico',
+      capacidad: (d['capacidad'] as num?)?.toInt() ?? 10,
+      precioBase: (d['precioBase'] as num?)?.toDouble() ?? 0,
+      activa: d['activa'] as bool? ?? true,
+      techada: d['techada'] as bool? ?? false,
+      iluminacion: d['iluminacion'] as bool? ?? false,
+      descripcion: d['descripcion'] as String? ?? '',
+    );
+  }
+
   factory CanchaModel.fromDoc(DocumentSnapshot doc, {String? complejoId}) {
     final d = doc.data() as Map<String, dynamic>;
     return CanchaModel(
@@ -75,6 +91,20 @@ class CanchaModel {
 
   factory CanchaModel.fromFirestore(DocumentSnapshot doc, {String? complejoId}) =>
       CanchaModel.fromDoc(doc, complejoId: complejoId);
+
+  /// Mapa para desnormalizar en el documento del complejo.
+  Map<String, dynamic> toResumenMap() => {
+        'id': id,
+        'nombre': nombre,
+        'deporte': deporte,
+        'superficie': superficie,
+        'capacidad': capacidad,
+        'precioBase': precioBase,
+        'activa': activa,
+        'techada': techada,
+        'iluminacion': iluminacion,
+        'descripcion': descripcion,
+      };
 
   Map<String, dynamic> toMap() => {
         'complejoId': complejoId,

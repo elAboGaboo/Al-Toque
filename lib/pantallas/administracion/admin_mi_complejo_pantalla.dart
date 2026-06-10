@@ -117,6 +117,7 @@ class _AdminMiComplejoScreenState
       final actualizado = ComplejoModel(
         id: actual.id,
         nombre: _nombreCtrl.text.trim(),
+        descripcion: actual.descripcion,
         direccion: _direccionCtrl.text.trim(),
         ciudad: actual.ciudad,
         lat: _lat,
@@ -126,6 +127,9 @@ class _AdminMiComplejoScreenState
         imagenes: actual.imagenes,
         duenoUid: actual.duenoUid,
         activo: actual.activo,
+        numeroCanchas: actual.numeroCanchas,
+        precioMin: actual.precioMin,
+        canchasActivas: actual.canchasActivas,
       );
 
       await repo.guardarComplejo(actualizado);
@@ -601,4 +605,3 @@ class _HorarioDropdown extends StatelessWidget {
     );
   }
 }
-

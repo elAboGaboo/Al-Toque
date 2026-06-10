@@ -455,8 +455,8 @@ class _PulseDotState extends State<_PulseDot> with SingleTickerProviderStateMixi
 class _ComplejosSection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // FutureProvider con timeout de 8 s — nunca queda en loading infinito.
-    final complejosAsync = ref.watch(complejosFutureProvider);
+    // Stream en tiempo real: nuevos complejos de dueños aparecen al instante.
+    final complejosAsync = ref.watch(complejosProvider);
 
     return complejosAsync.when(
       loading: () => const Padding(
@@ -505,7 +505,7 @@ class _ComplejosSection extends ConsumerWidget {
                 ),
                 const SizedBox(height: 14),
                 FilledButton.icon(
-                  onPressed: () => ref.invalidate(complejosFutureProvider),
+                  onPressed: () => ref.invalidate(complejosProvider),
                   icon: const Icon(Icons.refresh_rounded, size: 15),
                   label: Text('Reintentar',
                       style: GoogleFonts.outfit(fontWeight: FontWeight.w700)),
@@ -576,11 +576,12 @@ class _ComplejosSection extends ConsumerWidget {
                 _ComplexCard(
                   complejo: complejos[i],
                   onVerCanchas: () {
-                    // Guardar complejo en provider → detalle lo muestra
-                    // instantáneamente sin request extra a Firestore.
-                    ref.read(complejoSeleccionadoProvider.notifier)
-                        .select(complejos[i]);
-                    context.push('/complejo/${complejos[i].id}');
+                    final complejo = complejos[i];
+                    if (complejo.id.isEmpty) return;
+                    ref
+                        .read(complejoSeleccionadoProvider.notifier)
+                        .select(complejo);
+                    context.push('/complejo/${complejo.id}');
                   },
                 ),
               ],
@@ -594,31 +595,22 @@ class _ComplejosSection extends ConsumerWidget {
 
 // ── Tarjeta de complejo real ─────────────────────────────────────────────────
 
-class _ComplexCard extends ConsumerWidget {
+class _ComplexCard extends StatelessWidget {
   final ComplejoModel complejo;
   /// Callback que setea el provider y navega — recibido desde _ComplejosSection.
   final VoidCallback onVerCanchas;
   const _ComplexCard({required this.complejo, required this.onVerCanchas});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    // FutureProvider (one-shot) en lugar de StreamProvider:
-    // evita abrir un listener persistente de Firestore por cada complejo
-    // en la lista, lo que saturaba la conexión al navegar a la pantalla de detalle.
-    final canchasAsync = ref.watch(canchasFutureProvider(complejo.id));
+  Widget build(BuildContext context) {
+    // Campos desnormalizados en el doc del complejo — sin query por tarjeta.
+    // Evita N lecturas a subcolección canchas que bloqueaban el botón en Android.
+    final canchaCount = complejo.numeroCanchas > 0
+        ? '${complejo.numeroCanchas}'
+        : '—';
 
-    final canchaCount = canchasAsync.when(
-      loading: () => '…',
-      error: (_, _) => '?',
-      data: (list) => '${list.length}',
-    );
-
-    final precioDesde = canchasAsync.asData?.value
-        .map((c) => c.precioBase)
-        .fold<double?>(null, (min, p) => min == null || p < min ? p : min);
-
-    final precioLabel = precioDesde != null
-        ? 'S/${precioDesde.toStringAsFixed(0)}'
+    final precioLabel = complejo.precioMin > 0
+        ? 'S/${complejo.precioMin.toStringAsFixed(0)}'
         : '—';
 
     return Container(
@@ -743,7 +735,7 @@ class _ComplexCard extends ConsumerWidget {
                     children: [
                       TextSpan(text: precioLabel),
                       TextSpan(
-                        text: precioDesde != null ? ' / hr' : '',
+                        text: complejo.precioMin > 0 ? ' / hr' : '',
                         style: GoogleFonts.plusJakartaSans(
                           fontSize: 11,
                           fontWeight: FontWeight.w400,

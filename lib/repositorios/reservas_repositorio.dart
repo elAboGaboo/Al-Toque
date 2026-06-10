@@ -1,4 +1,4 @@
-// repositories/reservas_repository.dart
+﻿// repositories/reservas_repository.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../nucleo/constantes/firestore_rutas.dart';
@@ -6,6 +6,9 @@ import '../modelos/reserva_modelo.dart';
 
 class ReservasRepository {
   final _db = FirebaseFirestore.instance;
+
+  static bool _mismaFecha(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
 
   /// One-shot: reservas del día para una cancha — con timeout de 8 s.
   ///
@@ -17,9 +20,6 @@ class ReservasRepository {
     required String canchaId,
     required DateTime fecha,
   }) async {
-    final inicio = DateTime(fecha.year, fecha.month, fecha.day);
-    final fin = DateTime(fecha.year, fecha.month, fecha.day, 23, 59, 59);
-
     try {
       // Solo filtramos por complejoId en Firestore (campo único = sin índice).
       // canchaId y fecha se filtran en cliente — evita requerir índices
@@ -39,8 +39,7 @@ class ReservasRepository {
           .map(ReservaModel.fromFirestore)
           .where((r) =>
               r.canchaId == canchaId &&
-              !r.fecha.isBefore(inicio) &&
-              !r.fecha.isAfter(fin) &&
+              _mismaFecha(r.fecha, fecha) &&
               (r.estaConfirmada || r.estaPendiente))
           .toList();
     } on FirebaseException catch (e) {
@@ -57,9 +56,6 @@ class ReservasRepository {
     required String canchaId,
     required DateTime fecha,
   }) {
-    final inicio = DateTime(fecha.year, fecha.month, fecha.day);
-    final fin = DateTime(fecha.year, fecha.month, fecha.day, 23, 59, 59);
-
     return _db
         .collection(FirestorePaths.reservas)
         .where('complejoId', isEqualTo: complejoId)
@@ -68,14 +64,13 @@ class ReservasRepository {
             .map(ReservaModel.fromFirestore)
             .where((r) =>
                 r.canchaId == canchaId &&
-                !r.fecha.isBefore(inicio) &&
-                !r.fecha.isAfter(fin) &&
+                _mismaFecha(r.fecha, fecha) &&
                 (r.estaConfirmada || r.estaPendiente))
             .toList());
   }
 
-  /// Stream de reservas de un usuario — ordenadas client-side para evitar
-  /// necesidad de índice compuesto (where + orderBy en campos distintos).
+  /// Stream de reservas de un usuario â€” ordenadas client-side para evitar
+  /// necesidad de Ã­ndice compuesto (where + orderBy en campos distintos).
   Stream<List<ReservaModel>> streamMisReservas(String userId) {
     return _db
         .collection(FirestorePaths.reservas)
@@ -88,7 +83,7 @@ class ReservasRepository {
     });
   }
 
-  /// Stream de reservas de un complejo (admin) — ordenadas client-side.
+  /// Stream de reservas de un complejo (admin) â€” ordenadas client-side.
   Stream<List<ReservaModel>> streamReservasComplejo(String complejoId) {
     return _db
         .collection(FirestorePaths.reservas)
@@ -108,25 +103,21 @@ class ReservasRepository {
     required String complejoId,
     required DateTime fecha,
   }) {
-    final inicio = DateTime(fecha.year, fecha.month, fecha.day);
-    final fin = DateTime(fecha.year, fecha.month, fecha.day, 23, 59, 59);
-
     return _db
         .collection(FirestorePaths.reservas)
         .where('complejoId', isEqualTo: complejoId)
         .snapshots()
         .map((s) => s.docs
             .map(ReservaModel.fromFirestore)
-            .where((r) =>
-                !r.fecha.isBefore(inicio) && !r.fecha.isAfter(fin))
+            .where((r) => _mismaFecha(r.fecha, fecha))
             .toList());
   }
 
   /// Crea una reserva nueva. Retorna el ID de la reserva.
   ///
-  /// Usa un timeout de 15 s porque la persistencia offline está deshabilitada
-  /// (ver main.dart) y sin ella las escrituras esperan confirmación del servidor.
-  /// Pasado el límite se lanza Exception para que AsyncValue.guard lo capture.
+  /// Usa un timeout de 15 s porque la persistencia offline estÃ¡ deshabilitada
+  /// (ver main.dart) y sin ella las escrituras esperan confirmaciÃ³n del servidor.
+  /// Pasado el lÃ­mite se lanza Exception para que AsyncValue.guard lo capture.
   Future<String> crearReserva(ReservaModel reserva) async {
     // doc() sin argumento genera ID auto en el cliente.
     final docRef = reserva.id.isEmpty
@@ -151,7 +142,7 @@ class ReservasRepository {
     return docRef.id;
   }
 
-  /// Obtiene una reserva por ID — con timeout de 8 s para evitar spinner eterno.
+  /// Obtiene una reserva por ID â€” con timeout de 8 s para evitar spinner eterno.
   Future<ReservaModel?> getReserva(String reservaId) async {
     try {
       final doc = await _db
@@ -175,21 +166,21 @@ class ReservasRepository {
         .map((s) => s.exists ? ReservaModel.fromFirestore(s) : null);
   }
 
-  /// Cancela una reserva (estado → cancelada).
+  /// Cancela una reserva (estado â†’ cancelada).
   Future<void> cancelarReserva(String reservaId) async {
     await _db.doc(FirestorePaths.reservaDoc(reservaId)).update({
       'estado': 'cancelada',
     });
   }
 
-  /// Confirma una reserva — usado tanto en modo instantáneo como por el dueño.
+  /// Confirma una reserva â€” usado tanto en modo instantÃ¡neo como por el dueÃ±o.
   Future<void> confirmarReserva(String reservaId) async {
     await _db.doc(FirestorePaths.reservaDoc(reservaId)).update({
       'estado': 'confirmada',
     });
   }
 
-  /// El dueño rechaza una solicitud de reserva → estado cancelada + pago devuelto.
+  /// El dueÃ±o rechaza una solicitud de reserva â†’ estado cancelada + pago devuelto.
   Future<void> rechazarReserva(String reservaId) async {
     await _db.doc(FirestorePaths.reservaDoc(reservaId)).update({
       'estado': 'cancelada',
@@ -197,14 +188,14 @@ class ReservasRepository {
     });
   }
 
-  /// Libera el pago al dueño tras confirmar que la sesión se realizó.
+  /// Libera el pago al dueÃ±o tras confirmar que la sesiÃ³n se realizÃ³.
   Future<void> liberarPago(String reservaId) async {
     await _db.doc(FirestorePaths.reservaDoc(reservaId)).update({
       'estadoPago': 'liberado',
     });
   }
 
-  /// El jugador califica al complejo tras la sesión.
+  /// El jugador califica al complejo tras la sesiÃ³n.
   Future<void> calificarComplejo({
     required String reservaId,
     required double calificacion,
@@ -216,7 +207,7 @@ class ReservasRepository {
     });
   }
 
-  /// El dueño califica al jugador tras la sesión.
+  /// El dueÃ±o califica al jugador tras la sesiÃ³n.
   Future<void> calificarJugador({
     required String reservaId,
     required double calificacion,

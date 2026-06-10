@@ -21,6 +21,14 @@
             android:name="flutterEmbedding"
             android:value="2"/>
 
+        <!-- Desactiva Impeller en Android.
+             En algunos dispositivos/GPUs con Vulkan activo hemos visto
+             cuelgues y pantallas en blanco al navegar a vistas complejas
+             (SliverAppBar + imágenes de red + scroll). -->
+        <meta-data
+            android:name="io.flutter.embedding.android.EnableImpeller"
+            android:value="false"/>
+
         <!-- FCM channel icon (blanco 24x24) -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_icon"

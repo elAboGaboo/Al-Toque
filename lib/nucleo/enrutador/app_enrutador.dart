@@ -51,7 +51,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
 
   void refresh() => routerNotifier.value++;
 
-  ref.listen(authStateProvider, (_, _) => refresh());
+  ref.listen(authStateProvider, (prev, next) {
+    final prevUid = prev?.asData?.value?.uid;
+    final nextUid = next.asData?.value?.uid;
+    if (prevUid != nextUid) refresh();
+  });
 
   ref.listen(perfilUsuarioProvider, (prev, next) {
     final prevPerfil = prev?.asData?.value;
@@ -126,7 +130,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       if (esDueno) {
         final tieneComplejo =
             perfil.complejoId != null && perfil.complejoId!.isNotEmpty;
-        if (!tieneComplejo && loc != '/admin/setup-complejo') {
+        final esRutaReserva = loc.startsWith('/complejo/') ||
+            loc.startsWith('/reservar/') ||
+            loc.startsWith('/confirmacion/');
+        if (!tieneComplejo &&
+            loc != '/admin/setup-complejo' &&
+            !esRutaReserva) {
           return '/admin/setup-complejo';
         }
         // Rutas de detalle/flujo: duenos tambien pueden acceder.

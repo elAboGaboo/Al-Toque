@@ -232,6 +232,9 @@ class _AdminSetupComplejoScreenState
 
       // Vincular admin al complejo
       await ComplejosRepository().asignarAdmin(complejo.id, uid);
+      // Publicar canchasActivas/numeroCanchas/precioMin si el complejo ya tenía
+      // canchas antiguas en la subcolección antes de ser reclamado.
+      await ComplejosRepository().sincronizarCanchasComplejo(complejo.id);
 
       await UsuariosRepository().actualizarComplejoId(uid, complejo.id);
 
@@ -1002,4 +1005,3 @@ class _Dropdown extends StatelessWidget {
         ),
       );
 }
-

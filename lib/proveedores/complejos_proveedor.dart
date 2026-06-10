@@ -78,6 +78,16 @@ final complejoFutureProvider =
   return ref.watch(complejosRepositoryProvider).getComplejo(complejoId);
 });
 
+/// One-shot robusto para el detalle del jugador.
+/// Si `canchasActivas` falta en el doc raíz, intenta recuperarlas desde la
+/// subcolección una sola vez y repara el documento.
+final complejoDetalleJugadorProvider =
+    FutureProvider.family<ComplejoModel?, String>((ref, complejoId) {
+  return ref
+      .watch(complejosRepositoryProvider)
+      .getComplejoParaDetalleJugador(complejoId);
+});
+
 /// One-shot: obtener una cancha por IDs.
 final canchaFutureProvider =
     FutureProvider.family<CanchaModel?, ({String complejoId, String canchaId})>(

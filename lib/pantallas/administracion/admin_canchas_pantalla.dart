@@ -10,11 +10,54 @@ import '../../proveedores/complejos_proveedor.dart';
 import '../../repositorios/complejos_repositorio.dart';
 import 'admin_agregar_cancha_pantalla.dart';
 
-class AdminCanchasScreen extends ConsumerWidget {
+class AdminCanchasScreen extends ConsumerStatefulWidget {
   const AdminCanchasScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<AdminCanchasScreen> createState() =>
+      _AdminCanchasScreenState();
+}
+
+class _AdminCanchasScreenState extends ConsumerState<AdminCanchasScreen> {
+  bool _sincronizando = false;
+
+  Future<void> _sincronizarParaJugadores(String complejoId) async {
+    if (_sincronizando) return;
+    setState(() => _sincronizando = true);
+    try {
+      await ref
+          .read(complejosRepositoryProvider)
+          .sincronizarCanchasComplejo(complejoId);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Canchas publicadas para jugadores',
+              style: GoogleFonts.outfit(),
+            ),
+            backgroundColor: AppColors.aacc,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al sincronizar: $e',
+                style: GoogleFonts.outfit()),
+            backgroundColor: AppColors.ared,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _sincronizando = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final complejoId = ref.watch(complejoIdProvider);
 
     if (complejoId == null) {
@@ -117,6 +160,23 @@ class AdminCanchasScreen extends ConsumerWidget {
                         ),
                       ],
                     ),
+                  ),
+                  IconButton(
+                    tooltip: 'Publicar canchas para jugadores',
+                    onPressed: _sincronizando
+                        ? null
+                        : () => _sincronizarParaJugadores(complejoId),
+                    icon: _sincronizando
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: AppColors.aacc,
+                            ),
+                          )
+                        : const Icon(Icons.cloud_upload_outlined,
+                            color: AppColors.aacc, size: 22),
                   ),
                 ],
               ),

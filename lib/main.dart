@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/date_symbol_data_local.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'nucleo/enrutador/app_enrutador.dart';
 import 'nucleo/servicios/enlace_profundo_servicio.dart';
@@ -40,12 +41,11 @@ void main() async {
       options: DefaultFirebaseOptions.currentPlatform,
     );
 
-    // ── Deshabilitar persistencia offline de Firestore ────────────────────────
-    // Con persistencia activada (default), el SDK Android bloquea el platform
-    // channel thread al consultar subcollections no cacheadas → ANR en Android.
-    // Sin persistencia, las queries van al servidor y fallan rápido si no hay red.
+    // Persistencia activa: el home ya no hace N queries a subcolecciones
+    // (stats desnormalizados en el doc del complejo). La pantalla de detalle
+    // lee canchasActivas del doc raíz; la subcolección solo es fallback puntual.
     FirebaseFirestore.instance.settings = const Settings(
-      persistenceEnabled: false,
+      persistenceEnabled: true,
     );
 
     // Registrar handler background de FCM
@@ -61,6 +61,9 @@ void main() async {
 
   // Solicitar permisos Android en runtime
   await _solicitarPermisos();
+
+  // Locale español para DateFormat en pantalla de reserva (evita LocaleDataException).
+  await initializeDateFormatting('es');
 
   runApp(const ProviderScope(child: AlToqueApp()));
 }

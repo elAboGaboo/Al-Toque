@@ -1,4 +1,6 @@
 // pantallas/usuario/complejo_detalle_pantalla.dart
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -11,13 +13,9 @@ import '../../modelos/complejo_modelo.dart';
 import '../../proveedores/complejos_proveedor.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Arquitectura:
-//  • Complejo: capturado de complejoSeleccionadoProvider en initState (sin
-//    llamada extra a Firestore para navegación normal). Deep links usan
-//    complejoFutureProvider.
-//  • Canchas: ref.watch(canchasFutureProvider) — FutureProvider one-shot.
-//    Siempre resuelve (data / error) en ≤10 s. Nunca se queda en loading.
-//  • SliverFillRemaining en estados vacíos → siempre llena la pantalla.
+// Canchas: carga one-shot robusta con timeout.
+// Primero lee `canchasActivas` del doc raíz; si faltan, usa un fallback puntual
+// a la subcolección para reparar el dato y evitar pantallas en blanco.
 // ─────────────────────────────────────────────────────────────────────────────
 
 class ComplejoDetalleScreen extends ConsumerStatefulWidget {
@@ -34,66 +32,88 @@ class _ComplejoDetalleScreenState
   // Complejo capturado sincrónicamente en initState.
   // Para navegación normal (Inicio/Mapa) siempre está disponible.
   // Para deep links (_complejo == null) se usa complejoFutureProvider.
-  ComplejoModel? _complejo;
+  ComplejoModel? _complejoCache;
+  Timer? _timeoutTimer;
+  bool _tiempoAgotado = false;
 
   @override
   void initState() {
     super.initState();
-    // El complejo ya está en memoria (seteado en InicioScreen antes de navegar).
-    // No hace falta ningún request extra a Firestore.
     final cached = ref.read(complejoSeleccionadoProvider);
     if (cached != null && cached.id == widget.complejoId) {
-      _complejo = cached;
+      _complejoCache = cached;
     }
+    _timeoutTimer = Timer(const Duration(seconds: 8), () {
+      if (mounted) setState(() => _tiempoAgotado = true);
+    });
+  }
+
+  @override
+  void dispose() {
+    _timeoutTimer?.cancel();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    // Canchas: FutureProvider con timeout de 8 s.
-    // Riverpod cachea el resultado, así que si ya se cargaron en la tarjeta
-    // del inicio, la respuesta es inmediata.
-    final canchasAsync = ref.watch(canchasFutureProvider(widget.complejoId));
+    final complejoAsync =
+        ref.watch(complejoDetalleJugadorProvider(widget.complejoId));
 
-    // ── Complejo disponible (navegación normal) ───────────────────────────
-    if (_complejo != null) {
-      return _Scaffold(
-        child: _buildContent(_complejo!, canchasAsync),
+    final complejoLive = complejoAsync.asData?.value;
+    final complejo = complejoLive ?? _complejoCache;
+
+    if (complejo == null) {
+      return complejoAsync.when(
+        loading: () => _Scaffold(child: _LoadingView(onBack: _goBack)),
+        error: (e, _) => _Scaffold(
+          child: _ErrorView(
+            error: e.toString(),
+            onRetry: () =>
+                ref.invalidate(complejoDetalleJugadorProvider(widget.complejoId)),
+          ),
+        ),
+        data: (_) => _Scaffold(child: _NotFoundView(onBack: _goBack)),
       );
     }
 
-    // ── Deep link: cargar complejo desde Firestore ────────────────────────
-    final complejoAsync = ref.watch(complejoFutureProvider(widget.complejoId));
+    final canchas = complejo.canchasActivas;
+    final cargandoCanchas =
+        canchas.isEmpty && complejoAsync.isLoading && !_tiempoAgotado;
+    final errorCanchas = _tiempoAgotado && canchas.isEmpty && complejoAsync.isLoading
+        ? 'No se pudo cargar las canchas. Verifica tu conexión.'
+        : complejoAsync.hasError
+            ? complejoAsync.error.toString()
+            : null;
 
-    return complejoAsync.when(
-      loading: () => _Scaffold(
-        child: _LoadingView(onBack: _goBack),
+    return _Scaffold(
+      child: _buildContent(
+        complejo,
+        canchas: canchas,
+        cargando: cargandoCanchas,
+        error: errorCanchas,
+        onReintentar: () {
+          setState(() => _tiempoAgotado = false);
+          _timeoutTimer?.cancel();
+          _timeoutTimer = Timer(const Duration(seconds: 8), () {
+            if (mounted) setState(() => _tiempoAgotado = true);
+          });
+          ref.invalidate(complejoDetalleJugadorProvider(widget.complejoId));
+        },
       ),
-      error: (e, _) => _Scaffold(
-        child: _ErrorView(
-          error: e.toString(),
-          onRetry: () =>
-              ref.invalidate(complejoFutureProvider(widget.complejoId)),
-        ),
-      ),
-      data: (complejo) {
-        if (complejo == null) {
-          return _Scaffold(child: _NotFoundView(onBack: _goBack));
-        }
-        return _Scaffold(
-          child: _buildContent(complejo, canchasAsync),
-        );
-      },
     );
   }
 
-  void _goBack() => Navigator.of(context).maybePop();
+  void _goBack() => context.pop();
 
   // ── Contenido principal: header + canchas ─────────────────────────────
 
   Widget _buildContent(
-    ComplejoModel complejo,
-    AsyncValue<List<CanchaModel>> canchasAsync,
-  ) {
+    ComplejoModel complejo, {
+    required List<CanchaModel> canchas,
+    required bool cargando,
+    String? error,
+    VoidCallback? onReintentar,
+  }) {
     return CustomScrollView(
       slivers: [
         // Header con imagen del complejo
@@ -103,25 +123,27 @@ class _ComplejoDetalleScreenState
         SliverToBoxAdapter(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-            child: OutlinedButton.icon(
-              onPressed: () => MapsLauncher.irA(
-                lat: complejo.lat,
-                lng: complejo.lng,
-                nombre: complejo.nombre,
-              ),
-              icon: const Icon(Icons.directions_rounded, size: 16),
-              label: Text(
-                'Cómo llegar',
-                style: GoogleFonts.outfit(
-                    fontSize: 13, fontWeight: FontWeight.w600),
-              ),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppColors.acc,
-                side: const BorderSide(color: AppColors.acc),
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
-                minimumSize: const Size(double.infinity, 0),
+            child: SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => MapsLauncher.irA(
+                  lat: complejo.lat,
+                  lng: complejo.lng,
+                  nombre: complejo.nombre,
+                ),
+                icon: const Icon(Icons.directions_rounded, size: 16),
+                label: Text(
+                  'Cómo llegar',
+                  style: GoogleFonts.outfit(
+                      fontSize: 13, fontWeight: FontWeight.w600),
+                ),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.acc,
+                  side: const BorderSide(color: AppColors.acc),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
               ),
             ),
           ),
@@ -143,17 +165,28 @@ class _ComplejoDetalleScreenState
           ),
         ),
 
-        // Canchas: cargando / error / vacío / lista
-        ..._canchasSliver(canchasAsync),
+        ..._canchasSliver(
+          complejo,
+          canchas: canchas,
+          cargando: cargando,
+          error: error,
+          onReintentar: onReintentar,
+        ),
       ],
     );
   }
 
   // ── Slivers de canchas según estado ───────────────────────────────────
 
-  List<Widget> _canchasSliver(AsyncValue<List<CanchaModel>> async) {
-    return async.when(
-      loading: () => [
+  List<Widget> _canchasSliver(
+    ComplejoModel complejo, {
+    required List<CanchaModel> canchas,
+    required bool cargando,
+    String? error,
+    VoidCallback? onReintentar,
+  }) {
+    if (cargando) {
+      return [
         const SliverFillRemaining(
           hasScrollBody: false,
           child: Center(
@@ -173,54 +206,54 @@ class _ComplejoDetalleScreenState
             ),
           ),
         ),
-      ],
-      error: (e, _) => [
+      ];
+    }
+
+    if (error != null) {
+      return [
         SliverFillRemaining(
           hasScrollBody: false,
           child: _CanchasError(
-            error: e.toString(),
-            onRetry: () =>
-                ref.invalidate(canchasFutureProvider(widget.complejoId)),
+            error: error,
+            onRetry: onReintentar ?? () {},
           ),
         ),
-      ],
-      data: (canchas) {
-        if (canchas.isEmpty) {
-          return [
-            SliverFillRemaining(
-              hasScrollBody: false,
-              child: const _EmptyStateCanchas(),
-            ),
-          ];
-        }
-        return [
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(20, 4, 20, 100),
-            sliver: SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (_, i) => Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: _CanchaCard(
-                    cancha: canchas[i],
-                    onReservar: () {
-                      // Guardar cancha en provider antes de navegar →
-                      // ReservarScreen la lee en initState sin tocar Firestore.
-                      ref
-                          .read(canchaSeleccionadaProvider.notifier)
-                          .select(canchas[i]);
-                      context.push(
-                        '/reservar/${canchas[i].complejoId}/${canchas[i].id}',
-                      );
-                    },
-                  ),
-                ),
-                childCount: canchas.length,
+      ];
+    }
+
+    if (canchas.isEmpty) {
+      final msg = (complejo.numeroCanchas > 0 && complejo.canchasActivas.isEmpty)
+          ? 'Este complejo tiene canchas registradas, pero aún no están publicadas para jugadores.\nPide al dueño que entre a Admin → Canchas → subir a la nube.'
+          : 'Este complejo aún no tiene canchas activas.\nVuelve pronto.';
+      return [
+        SliverFillRemaining(
+          hasScrollBody: false,
+          child: _EmptyStateCanchas(mensaje: msg),
+        ),
+      ];
+    }
+
+    return [
+      SliverPadding(
+        padding: const EdgeInsets.fromLTRB(20, 4, 20, 100),
+        sliver: SliverList(
+          delegate: SliverChildBuilderDelegate(
+            (_, i) => Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: _CanchaCard(
+                cancha: canchas[i],
+                onReservar: () {
+                  ref.read(complejoSeleccionadoProvider.notifier).select(complejo);
+                  ref.read(canchaSeleccionadaProvider.notifier).select(canchas[i]);
+                  context.push('/reservar/${complejo.id}/${canchas[i].id}');
+                },
               ),
             ),
+            childCount: canchas.length,
           ),
-        ];
-      },
-    );
+        ),
+      ),
+    ];
   }
 }
 
@@ -280,7 +313,7 @@ class _ErrorView extends StatelessWidget {
     return SafeArea(
       child: Column(
         children: [
-          _BackButton(onBack: () => Navigator.of(context).maybePop()),
+          _BackButton(onBack: () => context.pop()),
           Expanded(
             child: Center(
               child: Padding(
@@ -554,74 +587,90 @@ class _CanchaCard extends StatelessWidget {
           ),
         ],
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Ícono deporte
-          Container(
-            width: 52,
-            height: 52,
-            decoration: BoxDecoration(
-              color: AppColors.accLight,
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Center(
-              child: Text(cancha.deporteEmoji,
-                  style: const TextStyle(fontSize: 26)),
-            ),
-          ),
-          const SizedBox(width: 14),
-          // Info
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  cancha.nombre,
-                  style: GoogleFonts.bricolageGrotesque(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.tx,
-                    letterSpacing: -0.2,
-                  ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Ícono deporte
+              Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  color: AppColors.accLight,
+                  borderRadius: BorderRadius.circular(14),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  '${cancha.deporteLabel} · ${cancha.superficieLabel} · ${cancha.capacidad} jug.',
-                  style: GoogleFonts.outfit(
-                      fontSize: 12, color: AppColors.tx2),
+                child: Center(
+                  child: Text(cancha.deporteEmoji,
+                      style: const TextStyle(fontSize: 26)),
                 ),
-                const SizedBox(height: 8),
-                Row(children: [
-                  Text(
-                    'S/ ${cancha.precioBase.toStringAsFixed(0)}',
-                    style: GoogleFonts.bricolageGrotesque(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.acc,
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      cancha.nombre,
+                      style: GoogleFonts.bricolageGrotesque(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.tx,
+                        letterSpacing: -0.2,
+                      ),
                     ),
-                  ),
-                  Text(' / hora',
-                      style: GoogleFonts.outfit(
-                          fontSize: 11, color: AppColors.tx3)),
-                ]),
-              ],
-            ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${cancha.deporteLabel} · ${cancha.superficieLabel} · ${cancha.capacidad} jug.',
+                      style:
+                          GoogleFonts.outfit(fontSize: 12, color: AppColors.tx2),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Text(
+                          'S/ ${cancha.precioBase.toStringAsFixed(0)}',
+                          style: GoogleFonts.bricolageGrotesque(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.acc,
+                          ),
+                        ),
+                        Text(
+                          ' / hora',
+                          style: GoogleFonts.outfit(
+                              fontSize: 11, color: AppColors.tx3),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
-          // Botón reservar
-          ElevatedButton(
-            onPressed: onReservar,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.acc,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 16, vertical: 10),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10)),
-              elevation: 0,
+          const SizedBox(height: 14),
+          Align(
+            alignment: Alignment.centerRight,
+            child: ElevatedButton(
+              onPressed: onReservar,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.acc,
+                foregroundColor: Colors.white,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                minimumSize: const Size(0, 0),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
+                elevation: 0,
+              ),
+              child: Text(
+                'Reservar',
+                style:
+                    GoogleFonts.outfit(fontSize: 13, fontWeight: FontWeight.w700),
+              ),
             ),
-            child: Text('Reservar',
-                style: GoogleFonts.outfit(
-                    fontSize: 13, fontWeight: FontWeight.w700)),
           ),
         ],
       ),
@@ -632,7 +681,10 @@ class _CanchaCard extends StatelessWidget {
 // ── Empty state de canchas ────────────────────────────────────────────────────
 
 class _EmptyStateCanchas extends StatelessWidget {
-  const _EmptyStateCanchas();
+  final String mensaje;
+  const _EmptyStateCanchas({
+    this.mensaje = 'Este complejo aún no tiene canchas activas.\nVuelve pronto.',
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -660,7 +712,7 @@ class _EmptyStateCanchas extends StatelessWidget {
                     color: AppColors.tx)),
             const SizedBox(height: 8),
             Text(
-              'Este complejo aún no tiene canchas activas.\nVuelve pronto.',
+              mensaje,
               textAlign: TextAlign.center,
               style: GoogleFonts.outfit(
                   fontSize: 13, color: AppColors.tx2, height: 1.5),
